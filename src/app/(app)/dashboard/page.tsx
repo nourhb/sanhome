@@ -3,11 +3,48 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Users, CalendarCheck, Stethoscope, AlertCircle, Loader2 } from "lucide-react";
+import { Activity, Users, CalendarCheck, Stethoscope, AlertCircle, Loader2, CheckCheck, TrendingDown, BarChartHorizontalBig, LineChart as LineChartIcon } from "lucide-react"; // Added new icons
 import Image from "next/image";
 import { fetchDashboardStats, type DashboardStats } from "@/app/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from "@/contexts/auth-context";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+
+// Mock data for new charts - this would ideally come from fetchDashboardStats or dedicated actions
+const appointmentsByTypeData = [
+  { type: "Check-up", count: 150, fill: "var(--color-checkup)" },
+  { type: "Med Review", count: 90, fill: "var(--color-medreview)" },
+  { type: "Wound Care", count: 60, fill: "var(--color-woundcare)" },
+  { type: "Vitals", count: 120, fill: "var(--color-vitals)" },
+  { type: "Consult", count: 75, fill: "var(--color-consult)" },
+];
+
+const patientRegistrationsData = [
+  { month: "Jan", newPatients: 10 },
+  { month: "Feb", newPatients: 15 },
+  { month: "Mar", newPatients: 12 },
+  { month: "Apr", newPatients: 18 },
+  { month: "May", newPatients: 25 },
+  { month: "Jun", newPatients: 22 },
+];
+
+const chartConfigAppointments = {
+  count: { label: "Count" },
+  checkup: { label: "Check-up", color: "hsl(var(--chart-1))" },
+  medreview: { label: "Med Review", color: "hsl(var(--chart-2))" },
+  woundcare: { label: "Wound Care", color: "hsl(var(--chart-3))" },
+  vitals: { label: "Vitals Check", color: "hsl(var(--chart-4))" },
+  consult: { label: "Consultation", color: "hsl(var(--chart-5))" },
+};
+
+const chartConfigRegistrations = {
+  newPatients: {
+    label: "New Patients",
+    color: "hsl(var(--chart-1))",
+  },
+};
+
 
 export default function DashboardPage() {
   const { currentUser, loading: authLoading } = useAuth();
@@ -15,9 +52,14 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Mock additional stats that might come from an expanded DashboardStats type
+  const additionalStats = {
+    completedAppointments: stats ? Math.floor(stats.upcomingAppointments * 0.85) : 78, // Example calculation
+    cancellationRate: "5%",
+  };
+
   useEffect(() => {
     if (authLoading) {
-      // Wait for authentication to complete
       return;
     }
 
@@ -40,12 +82,7 @@ export default function DashboardPage() {
       };
       getStats();
     } else {
-      // User is not authenticated, or auth state is still loading.
-      // Routing should ideally handle unauthenticated users,
-      // but we set loading to false if auth is done and no user.
       setIsLoading(false);
-      // setError("User not authenticated. Please log in to view the dashboard.");
-      // Or, you might rely on the main app router to redirect to login.
     }
   }, [currentUser, authLoading]);
 
@@ -148,17 +185,89 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
       
-      <Card className="overflow-hidden">
-          <Image 
-            src="https://placehold.co/1200x400.png" 
-            alt="Healthcare banner" 
-            width={1200} 
-            height={400} 
-            className="w-full h-auto object-cover"
-            data-ai-hint="healthcare team" 
-          />
+      {/* New Analytics Section */}
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-xl font-semibold">Detailed Analytics</CardTitle>
+          <CardDescription>Insights into platform activity and patient care.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center"><LineChartIcon className="mr-2 h-5 w-5 text-primary" />Patient Registrations Over Time</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ChartContainer config={chartConfigRegistrations} className="h-[250px] w-full">
+                  <LineChart data={patientRegistrationsData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false}/>
+                    <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
+                    <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
+                    <Tooltip
+                      cursor={false}
+                      content={<ChartTooltipContent indicator="line" />}
+                    />
+                    <Legend />
+                    <Line type="monotone" dataKey="newPatients" stroke="var(--color-newPatients)" strokeWidth={2} dot={{r:4}} activeDot={{r:6}} />
+                  </LineChart>
+                </ChartContainer>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center"><BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary" />Appointments by Type</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ChartContainer config={chartConfigAppointments} className="h-[250px] w-full">
+                  <BarChart data={appointmentsByTypeData} layout="vertical" margin={{ right: 20, left: 10 }}>
+                    <CartesianGrid horizontal={false} />
+                    <XAxis type="number" hide/>
+                    <YAxis dataKey="type" type="category" tickLine={false} axisLine={false} tickMargin={8} width={100} fontSize={12} />
+                    <Tooltip
+                      cursor={false}
+                      content={<ChartTooltipContent indicator="dot" hideLabel />}
+                    />
+                    <Legend />
+                    {Object.keys(chartConfigAppointments)
+                        .filter(key => key !== 'count') // Exclude the generic 'count' key used for dataKey
+                        .map((key) => (
+                            <Bar key={key} dataKey="count" name={chartConfigAppointments[key as keyof typeof chartConfigAppointments].label as string} fill={`var(--color-${key})`} radius={4} barSize={15} />
+                        ))
+                    }
+                     {/* Fallback generic bar if specific fills aren't working or for simplicity: */}
+                     {/* <Bar dataKey="count" fill="var(--color-count)" radius={4} barSize={20} name="Count" /> */}
+                  </BarChart>
+                </ChartContainer>
+              </CardContent>
+            </Card>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+             <Card className="hover:shadow-md transition-shadow duration-300">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Completed Appointments</CardTitle>
+                    <CheckCheck className="h-5 w-5 text-green-500" />
+                </CardHeader>
+                <CardContent>
+                    <div className="text-2xl font-bold">{additionalStats.completedAppointments}</div>
+                    <p className="text-xs text-muted-foreground">+12 since last week</p>
+                </CardContent>
+             </Card>
+             <Card className="hover:shadow-md transition-shadow duration-300">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Cancellation Rate</CardTitle>
+                    <TrendingDown className="h-5 w-5 text-red-500" />
+                </CardHeader>
+                <CardContent>
+                    <div className="text-2xl font-bold">{additionalStats.cancellationRate}</div>
+                    <p className="text-xs text-muted-foreground">Improved from 7% last month</p>
+                </CardContent>
+             </Card>
+             {/* Add two more small stat cards here if desired */}
+          </div>
+        </CardContent>
       </Card>
 
     </div>
   );
 }
+

@@ -24,9 +24,11 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { CalendarIcon, Clock, Loader2, VideoIcon, Users, User } from "lucide-react"; // Added VideoIcon
+import { CalendarIcon, Clock, Loader2, VideoIcon, Users, User, AlertCircle } from "lucide-react"; // Added VideoIcon
 import { useToast } from "@/hooks/use-toast";
 import { fetchPatients, fetchNurses, scheduleVideoConsult, type PatientListItem, type NurseListItem } from "@/app/actions";
+import { useAuth } from "@/contexts/auth-context"; // Import useAuth
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const scheduleVideoConsultFormSchema = z.object({
   patientId: z.string().min(1, { message: "Patient selection is required." }),
@@ -41,33 +43,56 @@ export default function ScheduleVideoConsultPage() {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const router = useRouter();
+  const { currentUser, loading: authLoading } = useAuth(); // Get auth state
   const [patients, setPatients] = useState<PatientListItem[]>([]);
   const [nurses, setNurses] = useState<NurseListItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadInitialData() {
+      if (authLoading) return; // Wait for auth state to resolve
+
+      if (!currentUser) {
+        setDataError("User not authenticated. Please log in to schedule consultations.");
+        setIsLoadingData(false);
+        setPatients([]);
+        setNurses([]);
+        return;
+      }
+
       setIsLoadingData(true);
+      setDataError(null);
       try {
         const [patientsResponse, nursesResponse] = await Promise.all([
           fetchPatients(),
           fetchNurses()
         ]);
-        if (patientsResponse.data) setPatients(patientsResponse.data);
-        else toast({ variant: "destructive", title: "Error", description: patientsResponse.error || "Failed to load patients." });
+        if (patientsResponse.data) {
+          setPatients(patientsResponse.data);
+        } else {
+          setDataError(patientsResponse.error || "Failed to load patients.");
+          toast({ variant: "destructive", title: "Error", description: patientsResponse.error || "Failed to load patients." });
+        }
         
-        if (nursesResponse.data) setNurses(nursesResponse.data);
-        else toast({ variant: "destructive", title: "Error", description: nursesResponse.error || "Failed to load nurses." });
+        if (nursesResponse.data) {
+          setNurses(nursesResponse.data);
+        } else {
+          setDataError((prevError) => prevError ? `${prevError} ${nursesResponse.error || "Failed to load nurses."}` : nursesResponse.error || "Failed to load nurses.");
+          toast({ variant: "destructive", title: "Error", description: nursesResponse.error || "Failed to load nurses." });
+        }
 
-      } catch (error) {
-        toast({ variant: "destructive", title: "Error", description: "Failed to load initial data for scheduling." });
+      } catch (error: any) {
+        const errorMsg = error.message || "Failed to load initial data for scheduling.";
+        setDataError(errorMsg);
+        toast({ variant: "destructive", title: "Error", description: errorMsg });
         console.error("Error loading patients/nurses:", error);
       } finally {
         setIsLoadingData(false);
       }
     }
     loadInitialData();
-  }, [toast]);
+  }, [currentUser, authLoading, toast]);
 
   const form = useForm<ScheduleVideoConsultFormValues>({
     resolver: zodResolver(scheduleVideoConsultFormSchema),
@@ -80,8 +105,11 @@ export default function ScheduleVideoConsultPage() {
   });
 
   function onSubmit(values: ScheduleVideoConsultFormValues) {
+    if (!currentUser) {
+      toast({ variant: "destructive", title: "Not Authenticated", description: "Please log in to schedule." });
+      return;
+    }
     startTransition(async () => {
-      // Combine date and time
       const [hours, minutes] = values.consultationTime.split(':').map(Number);
       const consultationDateTime = new Date(values.consultationDate);
       consultationDateTime.setHours(hours, minutes, 0, 0);
@@ -98,7 +126,6 @@ export default function ScheduleVideoConsultPage() {
           description: result.message,
         });
         form.reset();
-        // Optionally, redirect to a page showing scheduled consults or back to video consult page
         router.push("/video-consult"); 
       } else {
         toast({
@@ -110,7 +137,7 @@ export default function ScheduleVideoConsultPage() {
     });
   }
 
-  if (isLoadingData) {
+  if (isLoadingData || authLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
@@ -118,6 +145,33 @@ export default function ScheduleVideoConsultPage() {
       </div>
     );
   }
+
+  if (dataError) {
+    return (
+      <div className="container mx-auto p-4">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error Loading Data</AlertTitle>
+          <AlertDescription>{dataError}</AlertDescription>
+        </Alert>
+         <Button onClick={() => router.push('/dashboard')} className="mt-4">Go to Dashboard</Button>
+      </div>
+    );
+  }
+  
+  if (!currentUser) {
+    return (
+      <div className="container mx-auto p-4">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Authentication Required</AlertTitle>
+          <AlertDescription>You must be logged in to schedule a video consultation.</AlertDescription>
+        </Alert>
+        <Button onClick={() => router.push('/login')} className="mt-4">Login</Button>
+      </div>
+    );
+  }
+
 
   return (
     <div className="space-y-6">
@@ -148,10 +202,10 @@ export default function ScheduleVideoConsultPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="flex items-center"><User className="mr-2 h-4 w-4 text-muted-foreground"/>Patient</FormLabel>
-                       <Select onValueChange={field.onChange} defaultValue={field.value}>
+                       <Select onValueChange={field.onChange} defaultValue={field.value} disabled={patients.length === 0}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select a patient" />
+                            <SelectValue placeholder={patients.length === 0 ? "No patients available" : "Select a patient"} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -168,10 +222,10 @@ export default function ScheduleVideoConsultPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="flex items-center"><Users className="mr-2 h-4 w-4 text-muted-foreground"/>Nurse</FormLabel>
-                       <Select onValueChange={field.onChange} defaultValue={field.value}>
+                       <Select onValueChange={field.onChange} defaultValue={field.value} disabled={nurses.length === 0}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select a nurse" />
+                            <SelectValue placeholder={nurses.length === 0 ? "No nurses available" : "Select a nurse"} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -246,7 +300,7 @@ export default function ScheduleVideoConsultPage() {
               </div>
             </CardContent>
             <CardFooter className="flex justify-end">
-              <Button type="submit" disabled={isPending || isLoadingData}>
+              <Button type="submit" disabled={isPending || isLoadingData || !currentUser}>
                 {isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

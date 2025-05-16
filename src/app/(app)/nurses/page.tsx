@@ -1,15 +1,18 @@
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MapPin, Phone, UserPlus } from "lucide-react";
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { MapPin, Phone, UserPlus, Mail, Briefcase } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 
 const mockNurses = [
-  { id: 'n1', name: 'Nurse Alex Ray', specialty: 'Geriatrics', location: 'Springfield General Hospital', phone: '(555) 010-0101', avatar: 'https://placehold.co/100x100.png?text=AR', email: 'alex.ray@example.com' },
-  { id: 'n2', name: 'Nurse Betty Boo', specialty: 'Pediatrics', location: 'Community Health Clinic', phone: '(555) 010-0202', avatar: 'https://placehold.co/100x100.png?text=BB', email: 'betty.boo@example.com' },
-  { id: 'n3', name: 'Nurse Charles Xavier', specialty: 'Cardiology', location: 'City Heart Institute', phone: '(555) 010-0303', avatar: 'https://placehold.co/100x100.png?text=CX', email: 'charles.xavier@example.com' },
-  { id: 'n4', name: 'Nurse Diana Prince', specialty: 'Oncology', location: 'Hope Cancer Center', phone: '(555) 010-0404', avatar: 'https://placehold.co/100x100.png?text=DP', email: 'diana.prince@example.com' },
+  { id: 'n1', name: 'Nurse Alex Ray', specialty: 'Geriatrics', location: 'Springfield General Hospital', phone: '(555) 010-0101', avatar: 'https://placehold.co/100x100.png', email: 'alex.ray@example.com', status: 'Available', hint: 'nurse medical' },
+  { id: 'n2', name: 'Nurse Betty Boo', specialty: 'Pediatrics', location: 'Community Health Clinic', phone: '(555) 010-0202', avatar: 'https://placehold.co/100x100.png', email: 'betty.boo@example.com', status: 'On Duty', hint: 'nurse medical' },
+  { id: 'n3', name: 'Nurse Charles Xavier', specialty: 'Cardiology', location: 'City Heart Institute', phone: '(555) 010-0303', avatar: 'https://placehold.co/100x100.png', email: 'charles.xavier@example.com', status: 'Available', hint: 'nurse medical' },
+  { id: 'n4', name: 'Nurse Diana Prince', specialty: 'Oncology', location: 'Hope Cancer Center', phone: '(555) 010-0404', avatar: 'https://placehold.co/100x100.png', email: 'diana.prince@example.com', status: 'Unavailable', hint: 'nurse medical' },
+  { id: 'n5', name: 'Nurse Eddie Brock', specialty: 'Psychiatry', location: 'Mental Wellness Center', phone: '(555) 010-0505', avatar: 'https://placehold.co/100x100.png', email: 'eddie.brock@example.com', status: 'On Duty', hint: 'nurse medical' },
 ];
 
 export default function NursesPage() {
@@ -31,27 +34,39 @@ export default function NursesPage() {
           <CardTitle>Nurse Directory</CardTitle>
           <CardDescription>Browse and manage nurse profiles. Geolocation tracking would appear on the map below.</CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {mockNurses.map(nurse => (
-            <Card key={nurse.id} className="flex flex-col hover:shadow-md transition-shadow">
-              <CardHeader className="flex flex-row items-center gap-4 pb-3">
-                <Image src={nurse.avatar} alt={nurse.name} width={64} height={64} className="rounded-full" data-ai-hint="nurse medical" />
+            <Card key={nurse.id} className="flex flex-col hover:shadow-xl transition-shadow duration-300 rounded-lg overflow-hidden">
+              <CardHeader className="flex flex-row items-center gap-4 pb-3 bg-card p-4">
+                <Image src={nurse.avatar} alt={nurse.name} width={72} height={72} className="rounded-full border-2 border-primary/50" data-ai-hint={nurse.hint} />
                 <div>
                   <CardTitle className="text-lg">{nurse.name}</CardTitle>
-                  <CardDescription>{nurse.specialty}</CardDescription>
+                  <CardDescription className="text-sm flex items-center">
+                    <Briefcase className="h-3.5 w-3.5 mr-1.5 text-muted-foreground"/>{nurse.specialty}
+                  </CardDescription>
+                  <Badge 
+                    variant={nurse.status === 'Available' ? 'default' : nurse.status === 'On Duty' ? 'secondary' : 'outline'}
+                    className={`mt-1 text-xs ${nurse.status === 'Available' ? 'bg-green-500/20 text-green-700 border-green-500/30' : nurse.status === 'On Duty' ? 'bg-blue-500/20 text-blue-700 border-blue-500/30' : 'bg-red-500/20 text-red-700 border-red-500/30'}`}
+                  >
+                    {nurse.status}
+                  </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="flex-grow space-y-1 text-sm">
-                <p className="flex items-center text-muted-foreground">
-                  <MapPin className="h-4 w-4 mr-2 text-primary" />
+              <CardContent className="flex-grow space-y-2 text-sm p-4">
+                <p className="flex items-start text-muted-foreground">
+                  <MapPin className="h-4 w-4 mr-2 mt-0.5 text-primary flex-shrink-0" />
                   {nurse.location}
                 </p>
                 <p className="flex items-center text-muted-foreground">
-                  <Phone className="h-4 w-4 mr-2 text-primary" />
+                  <Phone className="h-4 w-4 mr-2 text-primary flex-shrink-0" />
                   {nurse.phone}
                 </p>
+                 <p className="flex items-center text-muted-foreground">
+                  <Mail className="h-4 w-4 mr-2 text-primary flex-shrink-0" />
+                  {nurse.email}
+                </p>
               </CardContent>
-              <CardFooter className="pt-3">
+              <CardFooter className="pt-3 p-4 border-t">
                   <Button variant="outline" size="sm" className="w-full">
                     View Profile & Schedule
                   </Button>
@@ -63,19 +78,24 @@ export default function NursesPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>Nurse Geolocation Tracking</CardTitle>
-          <CardDescription>Real-time location of active nurses (Placeholder).</CardDescription>
+          <CardDescription>Real-time location of active nurses.</CardDescription>
         </CardHeader>
         <CardContent className="h-96 bg-muted rounded-md flex items-center justify-center relative overflow-hidden">
           <Image 
             src="https://placehold.co/1000x600.png" 
             alt="Map placeholder showing city streets and pins" 
             fill={true}
-            className="object-cover opacity-50" 
+            className="object-cover opacity-30" 
             data-ai-hint="map city" 
           />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-xl font-semibold p-4 bg-background/80 rounded-md shadow">
-              Interactive Nurse Location Map (e.g., Google Maps) would be displayed here.
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4">
+            <MapPin className="h-16 w-16 text-primary mb-4 opacity-70"/>
+            <p className="text-xl font-semibold p-2 bg-background/80 rounded-md shadow text-foreground">
+              Interactive Nurse Location Map
+            </p>
+            <p className="text-sm text-muted-foreground mt-2 max-w-md bg-background/80 p-2 rounded-md shadow">
+                This area will display real-time nurse locations using Google Maps API integration.
+                Requires API key setup and location data for nurses.
             </p>
           </div>
         </CardContent>

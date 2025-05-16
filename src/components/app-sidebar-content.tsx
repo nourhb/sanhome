@@ -15,7 +15,7 @@ import {
   Bell,
   Activity,
   HeartPulse,
-  ShieldCog, // Added for Admin
+  Shield, // Changed from ShieldCog
 } from "lucide-react"
 
 import { APP_NAME } from "@/lib/constants"
@@ -48,7 +48,7 @@ const secondaryMenuItems = [
 ]
 
 const adminMenuItems = [
-  { href: "/admin/dashboard", label: "Admin Dashboard", icon: ShieldCog },
+  { href: "/admin/dashboard", label: "Admin Dashboard", icon: Shield }, // Changed from ShieldCog
 ]
 
 
@@ -180,3 +180,4 @@ export function AppSidebarContent() {
     </>
   )
 }
+

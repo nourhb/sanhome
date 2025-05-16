@@ -1,3 +1,4 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PersonalizedCareForm } from "@/components/personalized-care-form";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -51,7 +52,14 @@ export default async function PatientProfilePage({ params }: PatientProfilePageP
     <div className="space-y-6">
       <Card className="shadow-lg overflow-hidden">
         <div className="relative h-48 bg-gradient-to-r from-primary/80 to-secondary/80">
-          <Image src="https://placehold.co/1200x300.png" alt="Patient banner" layout="fill" objectFit="cover" data-ai-hint="abstract nature" />
+          <Image 
+            src="https://placehold.co/1200x300.png" 
+            alt="Patient banner" 
+            fill={true} 
+            className="object-cover"
+            data-ai-hint="abstract nature" 
+            priority
+          />
           <div className="absolute inset-0 bg-black/20 flex items-end p-6">
              <Avatar className="h-24 w-24 border-4 border-background shadow-md">
               <AvatarImage src={patient.avatarUrl} alt={patient.name} data-ai-hint="elderly person"/>

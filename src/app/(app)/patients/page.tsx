@@ -1,3 +1,4 @@
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +14,34 @@ const mockPatients = [
   { id: '4', name: 'Diana Prince', age: 45, lastVisit: '2024-06-25', condition: 'Post-surgery Recovery', status: 'Improving' },
 ];
 
+type PatientStatus = 'Stable' | 'Needs Follow-up' | 'Improving';
+
+const getStatusBadgeVariant = (status: PatientStatus) => {
+  switch (status) {
+    case 'Stable':
+      return 'default'; // Primary
+    case 'Improving':
+      return 'secondary'; // Secondary
+    case 'Needs Follow-up':
+      return 'outline'; // Accent based (outline with accent border)
+    default:
+      return 'outline';
+  }
+};
+
+const getStatusBadgeClassNames = (status: PatientStatus) => {
+    switch (status) {
+      case 'Stable':
+        return 'bg-primary/10 text-primary border-primary/30 hover:bg-primary/20';
+      case 'Improving':
+        return 'bg-secondary/10 text-secondary-foreground border-secondary/30 hover:bg-secondary/20';
+      case 'Needs Follow-up':
+        return 'border-accent/50 text-accent-foreground bg-accent/10 hover:bg-accent/20'; // Warm yellow accent
+      default:
+        return '';
+    }
+}
+
 export default function PatientsListPage() {
   return (
     <div className="space-y-6">
@@ -22,7 +51,7 @@ export default function PatientsListPage() {
           <p className="text-muted-foreground">View, add, and manage patient records.</p>
         </div>
         <Button asChild>
-          <Link href="/patients/new"> {/* Placeholder for new patient form */}
+          <Link href="/patients/new">
             <PlusCircle className="mr-2 h-4 w-4" /> Add New Patient
           </Link>
         </Button>
@@ -53,10 +82,10 @@ export default function PatientsListPage() {
                   <TableCell>{patient.lastVisit}</TableCell>
                   <TableCell>{patient.condition}</TableCell>
                   <TableCell>
-                    <Badge variant={patient.status === 'Stable' ? 'default' : patient.status === 'Improving' ? 'secondary' : 'destructive'}
-                           className={patient.status === 'Stable' ? 'bg-green-100 text-green-800 border-green-300' 
-                                       : patient.status === 'Improving' ? 'bg-blue-100 text-blue-800 border-blue-300' 
-                                       : 'bg-yellow-100 text-yellow-800 border-yellow-300'}>
+                    <Badge 
+                        variant={getStatusBadgeVariant(patient.status as PatientStatus)}
+                        className={getStatusBadgeClassNames(patient.status as PatientStatus)}
+                    >
                       {patient.status}
                     </Badge>
                   </TableCell>

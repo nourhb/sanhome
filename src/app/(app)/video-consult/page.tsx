@@ -1,5 +1,7 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Video, PhoneOff, Users, Mic, VideoOff } from "lucide-react";
 import Image from "next/image";
 
@@ -18,7 +20,13 @@ export default function VideoConsultPage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="aspect-video bg-muted rounded-md flex flex-col items-center justify-center p-8 relative overflow-hidden">
-            <Image src="https://placehold.co/800x450.png?text=Video+Feed+Area" alt="Video feed placeholder" layout="fill" objectFit="cover" data-ai-hint="video call interface" />
+            <Image 
+                src="https://placehold.co/800x450.png" 
+                alt="Video feed placeholder" 
+                fill={true} 
+                className="object-cover"
+                data-ai-hint="video call interface" 
+            />
             <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center">
                 <Video className="h-24 w-24 text-background/50 mb-4" />
                 <h3 className="text-xl font-semibold text-background mb-2">Video Call Feature Coming Soon</h3>

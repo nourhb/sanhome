@@ -1,6 +1,7 @@
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Calendar, PlusCircle, Clock, User, MapPin } from "lucide-react";
+import { Calendar, PlusCircle, Clock, User } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 
@@ -10,6 +11,35 @@ const mockAppointments = [
   { id: 'a3', patient: 'Charlie Chaplin', nurse: 'Nurse Alex', date: '2024-08-06', time: '11:30 AM', type: 'Wound Care', status: 'Completed' },
   { id: 'a4', patient: 'Diana Prince', nurse: 'Nurse Charles', date: '2024-08-07', time: '09:00 AM', type: 'Vitals Check', status: 'Cancelled' },
 ];
+
+type AppointmentStatus = 'Scheduled' | 'Completed' | 'Cancelled';
+
+const getStatusBadgeVariant = (status: AppointmentStatus) => {
+  switch (status) {
+    case 'Scheduled':
+      return 'default'; // Uses primary color
+    case 'Completed':
+      return 'secondary'; // Uses secondary color
+    case 'Cancelled':
+      return 'destructive'; // Uses destructive color
+    default:
+      return 'outline';
+  }
+};
+
+const getStatusBadgeClassNames = (status: AppointmentStatus) => {
+    switch (status) {
+      case 'Scheduled':
+        return 'bg-primary/10 text-primary border-primary/30 hover:bg-primary/20';
+      case 'Completed':
+        return 'bg-secondary/10 text-secondary-foreground border-secondary/30 hover:bg-secondary/20';
+      case 'Cancelled':
+        return 'bg-destructive/10 text-destructive-foreground border-destructive/30 hover:bg-destructive/20';
+      default:
+        return '';
+    }
+}
+
 
 export default function AppointmentsPage() {
   return (
@@ -42,16 +72,10 @@ export default function AppointmentsPage() {
                       <User className="h-4 w-4" /> Patient: {appt.patient} <span className="text-muted-foreground mx-1">|</span> <User className="h-4 w-4" /> Nurse: {appt.nurse}
                     </CardDescription>
                   </div>
-                  <Badge variant={
-                    appt.status === 'Scheduled' ? 'default' :
-                    appt.status === 'Completed' ? 'secondary' :
-                    'destructive'
-                  }
-                  className={
-                    appt.status === 'Scheduled' ? 'bg-blue-100 text-blue-800 border-blue-300' :
-                    appt.status === 'Completed' ? 'bg-green-100 text-green-800 border-green-300' :
-                    'bg-red-100 text-red-800 border-red-300'
-                  }>
+                  <Badge 
+                    variant={getStatusBadgeVariant(appt.status as AppointmentStatus)}
+                    className={getStatusBadgeClassNames(appt.status as AppointmentStatus)}
+                  >
                     {appt.status}
                   </Badge>
                 </div>

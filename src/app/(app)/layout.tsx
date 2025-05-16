@@ -1,3 +1,4 @@
+
 import type { ReactNode } from 'react';
 import { AppSidebarContent } from '@/components/app-sidebar-content';
 import { UserNav } from '@/components/user-nav';
@@ -16,7 +17,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       <Sidebar className="border-r bg-sidebar text-sidebar-foreground">
         <AppSidebarContent />
       </Sidebar>
-      <div className="flex flex-col flex-1 min-h-screen">
+      <div className="min-h-screen flex flex-1 flex-col"> {/* Changed order of flex classes */}
         <header className="sticky top-0 z-30 flex h-[60px] items-center gap-4 border-b bg-background px-4 sm:px-6 shadow-sm">
           <SidebarTrigger className="sm:hidden" />
            <div className="flex items-center gap-2 sm:hidden">

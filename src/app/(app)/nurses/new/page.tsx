@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useState, useTransition } from "react";
+import Image from "next/image";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,15 +19,25 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, UserPlus } from "lucide-react";
+import { Loader2, UserPlus, UploadCloud } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
 const nurseFormSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
   specialty: z.string().min(3, { message: "Specialty is required." }),
   location: z.string().min(3, { message: "Location is required." }),
   phone: z.string().min(10, { message: "Phone number must be at least 10 digits." }),
-  avatarUrl: z.string().url({ message: "Please enter a valid URL." }).optional().or(z.literal('')),
+  avatarFile: z
+    .custom<File | undefined>()
+    .refine((file) => !file || file.size <= MAX_FILE_SIZE, `Max file size is 5MB.`)
+    .refine(
+      (file) => !file || ACCEPTED_IMAGE_TYPES.includes(file.type),
+      "Only .jpg, .jpeg, .png and .webp formats are supported."
+    ).optional(),
 });
 
 type NurseFormValues = z.infer<typeof nurseFormSchema>;
@@ -34,6 +45,7 @@ type NurseFormValues = z.infer<typeof nurseFormSchema>;
 export default function AddNursePage() {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
 
   const form = useForm<NurseFormValues>({
     resolver: zodResolver(nurseFormSchema),
@@ -42,19 +54,28 @@ export default function AddNursePage() {
       specialty: "",
       location: "",
       phone: "",
-      avatarUrl: "",
+      avatarFile: undefined,
     },
   });
 
   function onSubmit(values: NurseFormValues) {
     startTransition(async () => {
       console.log("Nurse data submitted:", values);
+      if (values.avatarFile) {
+        console.log("Avatar file details:", {
+          name: values.avatarFile.name,
+          type: values.avatarFile.type,
+          size: values.avatarFile.size,
+        });
+        // In a real app, you would upload values.avatarFile to Firebase Storage
+      }
       await new Promise(resolve => setTimeout(resolve, 1000)); 
       toast({
         title: "Nurse Added",
         description: `${values.fullName} has been successfully added.`,
       });
       form.reset();
+      setAvatarPreview(null);
     });
   }
 
@@ -134,14 +155,37 @@ export default function AddNursePage() {
               />
               <FormField
                 control={form.control}
-                name="avatarUrl"
+                name="avatarFile"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Avatar URL (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="https://placehold.co/100x100.png" {...field} />
-                    </FormControl>
-                    <FormDescription>Enter a URL for the nurse's profile picture.</FormDescription>
+                    <FormLabel>Profile Picture</FormLabel>
+                     <div className="flex items-center gap-4">
+                      <Avatar className="h-20 w-20">
+                        <AvatarImage src={avatarPreview || undefined} alt="Avatar preview" data-ai-hint="nurse medical" />
+                        <AvatarFallback><UploadCloud className="h-8 w-8 text-muted-foreground" /></AvatarFallback>
+                      </Avatar>
+                      <FormControl>
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            field.onChange(file); // Inform react-hook-form
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                setAvatarPreview(reader.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            } else {
+                              setAvatarPreview(null);
+                            }
+                          }}
+                          className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                        />
+                      </FormControl>
+                    </div>
+                    <FormDescription>Upload a profile picture for the nurse (max 5MB, JPG/PNG/WEBP).</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

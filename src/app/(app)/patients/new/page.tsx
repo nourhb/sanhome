@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useState, useTransition } from "react";
 import { format } from "date-fns";
+import Image from "next/image";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,13 +24,23 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { CalendarIcon, Loader2, UserPlus } from "lucide-react";
+import { CalendarIcon, Loader2, UserPlus, UploadCloud } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
 const patientFormSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
   age: z.coerce.number().int().positive({ message: "Age must be a positive number." }),
-  avatarUrl: z.string().url({ message: "Please enter a valid URL." }).optional().or(z.literal('')),
+  avatarFile: z
+    .custom<File | undefined>()
+    .refine((file) => !file || file.size <= MAX_FILE_SIZE, `Max file size is 5MB.`)
+    .refine(
+      (file) => !file || ACCEPTED_IMAGE_TYPES.includes(file.type),
+      "Only .jpg, .jpeg, .png and .webp formats are supported."
+    ).optional(),
   joinDate: z.date({ required_error: "Join date is required." }),
   primaryNurse: z.string().min(2, { message: "Primary nurse name is required." }),
   phone: z.string().min(10, { message: "Phone number must be at least 10 digits." }),
@@ -45,13 +56,14 @@ type PatientFormValues = z.infer<typeof patientFormSchema>;
 export default function AddPatientPage() {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
 
   const form = useForm<PatientFormValues>({
     resolver: zodResolver(patientFormSchema),
     defaultValues: {
       fullName: "",
       age: undefined,
-      avatarUrl: "",
+      avatarFile: undefined,
       joinDate: undefined,
       primaryNurse: "",
       phone: "",
@@ -65,14 +77,23 @@ export default function AddPatientPage() {
 
   function onSubmit(values: PatientFormValues) {
     startTransition(async () => {
-      // In a real app, you would send this data to your backend
       console.log("Patient data submitted:", values);
+      if (values.avatarFile) {
+        console.log("Avatar file details:", {
+          name: values.avatarFile.name,
+          type: values.avatarFile.type,
+          size: values.avatarFile.size,
+        });
+        // In a real app, you would upload values.avatarFile to a storage service (e.g., Firebase Storage)
+        // and save the URL.
+      }
       await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
       toast({
         title: "Patient Added",
         description: `${values.fullName} has been successfully added.`,
       });
-      form.reset(); // Reset form after submission
+      form.reset();
+      setAvatarPreview(null);
     });
   }
 
@@ -129,14 +150,37 @@ export default function AddPatientPage() {
 
               <FormField
                 control={form.control}
-                name="avatarUrl"
+                name="avatarFile"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Avatar URL (Optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="https://placehold.co/100x100.png" {...field} />
-                    </FormControl>
-                    <FormDescription>Enter a URL for the patient's profile picture.</FormDescription>
+                    <FormLabel>Profile Picture</FormLabel>
+                    <div className="flex items-center gap-4">
+                      <Avatar className="h-20 w-20">
+                        <AvatarImage src={avatarPreview || undefined} alt="Avatar preview" data-ai-hint="person face" />
+                        <AvatarFallback><UploadCloud className="h-8 w-8 text-muted-foreground" /></AvatarFallback>
+                      </Avatar>
+                      <FormControl>
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            field.onChange(file); // Inform react-hook-form
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                setAvatarPreview(reader.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            } else {
+                              setAvatarPreview(null);
+                            }
+                          }}
+                          className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                        />
+                      </FormControl>
+                    </div>
+                    <FormDescription>Upload a profile picture for the patient (max 5MB, JPG/PNG/WEBP).</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

@@ -1,12 +1,62 @@
 
+"use client";
+
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Users, CalendarCheck, Stethoscope, AlertCircle } from "lucide-react";
+import { Activity, Users, CalendarCheck, Stethoscope, AlertCircle, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { fetchDashboardStats, type DashboardStats } from "@/app/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useAuth } from "@/contexts/auth-context";
 
-export default async function DashboardPage() {
-  const { data: stats, error } = await fetchDashboardStats();
+export default function DashboardPage() {
+  const { currentUser, loading: authLoading } = useAuth();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (authLoading) {
+      // Wait for authentication to complete
+      return;
+    }
+
+    if (currentUser) {
+      const getStats = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+          const result = await fetchDashboardStats();
+          if (result.data) {
+            setStats(result.data);
+          } else {
+            setError(result.error || "Failed to load dashboard statistics (no data).");
+          }
+        } catch (e: any) {
+          setError(e.message || "An unexpected error occurred while fetching stats.");
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      getStats();
+    } else {
+      // User is not authenticated, or auth state is still loading.
+      // Routing should ideally handle unauthenticated users,
+      // but we set loading to false if auth is done and no user.
+      setIsLoading(false);
+      // setError("User not authenticated. Please log in to view the dashboard.");
+      // Or, you might rely on the main app router to redirect to login.
+    }
+  }, [currentUser, authLoading]);
+
+  if (isLoading || authLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
+        <p>Loading dashboard data...</p>
+      </div>
+    );
+  }
 
   if (error || !stats) {
     return (
@@ -16,7 +66,6 @@ export default async function DashboardPage() {
           <AlertTitle>Error Loading Dashboard Data</AlertTitle>
           <AlertDescription>{error || "Could not load dashboard statistics."}</AlertDescription>
         </Alert>
-        {/* Optionally, render a fallback static dashboard or a simpler loading state */}
       </div>
     );
   }

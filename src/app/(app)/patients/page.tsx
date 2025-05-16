@@ -44,47 +44,47 @@ export default function PatientsListPage() {
   const { currentUser, loading: authLoading } = useAuth();
   const [patients, setPatients] = useState<PatientListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // True initially: covers auth and initial data load
+  const [isLoading, setIsLoading] = useState(true); 
 
   useEffect(() => {
-    console.log("PatientsListPage useEffect triggered. AuthLoading:", authLoading, "CurrentUser:", !!currentUser);
+    console.log("[CLIENT_LOG] PatientsListPage useEffect triggered. AuthLoading:", authLoading, "CurrentUser:", !!currentUser);
 
     if (authLoading) {
-      console.log("Auth is loading, setting isLoading to true.");
+      console.log("[CLIENT_LOG] PatientsListPage: Auth is loading, setting component isLoading to true.");
       setIsLoading(true);
       return;
     }
 
     if (!currentUser) {
-      console.log("No current user. Setting error and stopping load.");
+      console.log("[CLIENT_LOG] PatientsListPage: No current user. Setting error and stopping load.");
       setError("User not authenticated. Please log in to view patients.");
       setIsLoading(false);
       setPatients(null); 
       return;
     }
 
-    // If we reach here, authLoading is false and currentUser exists.
-    console.log("User is authenticated, proceeding to load patients.");
+    console.log("[CLIENT_LOG] PatientsListPage: User is authenticated (currentUser.uid:", currentUser.uid, "). Proceeding to load patients.");
     async function loadPatients() {
-      setIsLoading(true); // Set loading true for the data fetch operation
+      console.log("[CLIENT_LOG] PatientsListPage loadPatients: Setting component isLoading to true for data fetch.");
+      setIsLoading(true); 
       setError(null);
       try {
-        console.log("Calling fetchPatients server action.");
+        console.log("[CLIENT_LOG] PatientsListPage loadPatients: Calling fetchPatients server action.");
         const result = await fetchPatients();
         if (result.data) {
-          console.log("fetchPatients successful, data received:", result.data.length, "patients");
+          console.log(`[CLIENT_LOG] PatientsListPage loadPatients: fetchPatients successful, data received: ${result.data.length} patients`);
           setPatients(result.data);
         } else {
-          console.error("fetchPatients returned an error or no data:", result.error);
+          console.error("[CLIENT_ERROR] PatientsListPage loadPatients: fetchPatients returned an error or no data:", result.error);
           setError(result.error || "Failed to load patients (no data).");
           setPatients(null);
         }
       } catch (e: any) {
-        console.error("Exception during fetchPatients call:", e);
+        console.error("[CLIENT_ERROR] PatientsListPage loadPatients: Exception during fetchPatients call:", e);
         setError(e.message || "An unexpected error occurred while fetching patients.");
         setPatients(null);
       } finally {
-        console.log("loadPatients finished, setting isLoading to false.");
+        console.log("[CLIENT_LOG] PatientsListPage loadPatients: fetch finished, setting component isLoading to false.");
         setIsLoading(false);
       }
     }
@@ -93,6 +93,7 @@ export default function PatientsListPage() {
   }, [currentUser, authLoading]);
 
   if (isLoading) {
+    console.log("[CLIENT_LOG] PatientsListPage render: isLoading is true. Showing loader.");
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
@@ -102,6 +103,7 @@ export default function PatientsListPage() {
   }
 
   if (error) {
+    console.log("[CLIENT_LOG] PatientsListPage render: error is present. Showing error alert:", error);
     return (
       <div className="container mx-auto p-4">
         <Alert variant="destructive">
@@ -109,11 +111,13 @@ export default function PatientsListPage() {
           <AlertTitle>Error Loading Patients</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
+         <Button onClick={() => router.push('/dashboard')} className="mt-4">Go to Dashboard</Button>
       </div>
     );
   }
-
+  
   if (!patients || patients.length === 0) {
+    console.log("[CLIENT_LOG] PatientsListPage render: No patients data or empty array. Showing 'No patients found'.");
      return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -141,7 +145,7 @@ export default function PatientsListPage() {
       </div>
     );
   }
-
+  console.log("[CLIENT_LOG] PatientsListPage render: Rendering patient table with", patients.length, "patients.");
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -204,3 +208,5 @@ export default function PatientsListPage() {
     </div>
   );
 }
+
+    

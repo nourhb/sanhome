@@ -8,7 +8,7 @@ import {
 } from '@/ai/flows/personalized-care-suggestions';
 import { z } from 'zod';
 import { generateRandomPassword, generateRandomString } from '@/lib/utils';
-import { db, storage } from '@/lib/firebase';
+import { auth, db, storage } from '@/lib/firebase'; // db and storage are now initialized
 import {
   collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp,
   query, where, updateDoc, deleteDoc, writeBatch, getCountFromServer, orderBy
@@ -43,7 +43,7 @@ export type PatientListItem = {
   name: string;
   age: number;
   avatarUrl: string;
-  joinDate: string; // Should be ISO string date 'YYYY-MM-DD'
+  joinDate: string; 
   primaryNurse: string;
   phone: string;
   email: string;
@@ -51,46 +51,72 @@ export type PatientListItem = {
   mobilityStatus: string;
   pathologies: string[];
   allergies: string[];
-  lastVisit: string; // Should be ISO string date 'YYYY-MM-DD'
+  lastVisit: string; 
   condition: string;
   status: string;
   hint?: string;
   currentMedications?: Array<{ name: string; dosage: string }>;
   recentVitals?: { date: string; bp: string; hr: string; temp: string; glucose: string };
-  createdAt?: Timestamp; // Keep as Timestamp for server-side processing
+  createdAt?: Timestamp;
 };
 
 export async function fetchPatients(): Promise<{ data?: PatientListItem[], error?: string }> {
-  console.log("actions.ts: fetchPatients (Firestore)");
+  console.log("[ACTION_LOG] fetchPatients: Initiated.");
   try {
-    const patientsCollection = collection(db, "patients");
-    const q = query(patientsCollection, orderBy("createdAt", "desc"));
-    const patientsSnapshot = await getDocs(q);
-    const patientsList = patientsSnapshot.docs.map(doc => {
-      const data = doc.data();
+    // Temporarily simplify the query to rule out issues with orderBy or other clauses
+    const patientsCollectionRef = collection(db, "patients");
+    console.log("[ACTION_LOG] fetchPatients: Created collection reference. Attempting getDocs...");
+    
+    const patientsSnapshot = await getDocs(patientsCollectionRef);
+    // const q = query(collection(db, "patients"), orderBy("createdAt", "desc"));
+    // const patientsSnapshot = await getDocs(q);
+
+    console.log(`[ACTION_LOG] fetchPatients: getDocs successful. Found ${patientsSnapshot.docs.length} documents.`);
+    
+    const patientsList = patientsSnapshot.docs.map(docSnap => {
+      const data = docSnap.data();
       return {
-        id: doc.id,
-        ...data,
-        joinDate: data.joinDate instanceof Timestamp ? data.joinDate.toDate().toISOString().split('T')[0] : data.joinDate,
-        lastVisit: data.lastVisit instanceof Timestamp ? data.lastVisit.toDate().toISOString().split('T')[0] : data.lastVisit,
-        createdAt: data.createdAt, // Keep as Timestamp
+        id: docSnap.id,
+        name: data.name || "N/A",
+        age: data.age || 0,
+        avatarUrl: data.avatarUrl || `https://placehold.co/100x100.png?text=P`,
+        joinDate: data.joinDate instanceof Timestamp ? data.joinDate.toDate().toISOString().split('T')[0] : data.joinDate || new Date().toISOString().split('T')[0],
+        primaryNurse: data.primaryNurse || "N/A",
+        phone: data.phone || "N/A",
+        email: data.email || "N/A",
+        address: data.address || "N/A",
+        mobilityStatus: data.mobilityStatus || "N/A",
+        pathologies: Array.isArray(data.pathologies) ? data.pathologies : [],
+        allergies: Array.isArray(data.allergies) ? data.allergies : [],
+        lastVisit: data.lastVisit instanceof Timestamp ? data.lastVisit.toDate().toISOString().split('T')[0] : data.lastVisit || new Date().toISOString().split('T')[0],
+        condition: data.condition || "N/A",
+        status: data.status || "N/A",
+        hint: data.hint || 'person face',
+        createdAt: data.createdAt,
       } as PatientListItem;
     });
+    console.log("[ACTION_LOG] fetchPatients: Data mapping complete. Returning data.");
     return { data: patientsList };
   } catch (error: any) {
-    console.error("Error fetching patients from Firestore:", error);
+    console.error("[ACTION_ERROR] fetchPatients: Error fetching patients from Firestore:", error.code, error.message, error);
     return { error: `Failed to fetch patients: ${error.message}` };
   }
 }
 
 export async function fetchPatientById(id: string): Promise<{ data?: PatientListItem, error?: string }> {
-  console.log(`actions.ts: fetchPatientById (Firestore) for id: ${id}`);
+  console.log(`[ACTION_LOG] fetchPatientById: Initiated for ID: ${id}`);
   try {
-    if (!id) return { error: "Patient ID is required." };
+    if (!id) {
+      console.error("[ACTION_ERROR] fetchPatientById: Patient ID is required.");
+      return { error: "Patient ID is required." };
+    }
     const patientDocRef = doc(db, "patients", id);
+    console.log("[ACTION_LOG] fetchPatientById: Created document reference. Attempting getDoc...");
     const patientDoc = await getDoc(patientDocRef);
+
     if (patientDoc.exists()) {
       const data = patientDoc.data();
+      console.log("[ACTION_LOG] fetchPatientById: Document exists. Mapping data.");
       const patientData = {
         id: patientDoc.id,
         ...data,
@@ -103,14 +129,16 @@ export async function fetchPatientById(id: string): Promise<{ data?: PatientList
         recentVitals: data.recentVitals || {
             date: "2024-07-30", bp: "140/90 mmHg", hr: "75 bpm", temp: "37.0°C", glucose: "120 mg/dL"
         },
-        createdAt: data.createdAt, // Keep as Timestamp
+        createdAt: data.createdAt,
       } as PatientListItem;
+      console.log("[ACTION_LOG] fetchPatientById: Data mapping complete. Returning data.");
       return { data: patientData };
     } else {
+      console.warn(`[ACTION_WARN] fetchPatientById: Patient with ID ${id} not found.`);
       return { error: "Patient not found." };
     }
   } catch (error: any) {
-    console.error("Error fetching patient by ID from Firestore:", error);
+    console.error(`[ACTION_ERROR] fetchPatientById: Error fetching patient ${id}:`, error.code, error.message, error);
     return { error: `Failed to fetch patient: ${error.message}` };
   }
 }
@@ -127,7 +155,6 @@ const AddPatientInputSchema = z.object({
   mobilityStatus: z.string().min(3),
   pathologies: z.string().min(3),
   allergies: z.string().optional(),
-  // avatarUrl is intentionally omitted here as it's derived in the action
 });
 export type AddPatientFormValues = z.infer<typeof AddPatientInputSchema>  & { avatarUrl?: string };
 
@@ -135,18 +162,21 @@ export type AddPatientFormValues = z.infer<typeof AddPatientInputSchema>  & { av
 export async function addPatient(
   values: AddPatientFormValues
 ): Promise<{ success?: boolean; message: string; patientId?: string }> {
-  console.log("actions.ts: addPatient (Firestore)", values);
+  console.log("[ACTION_LOG] addPatient: Initiated with values:", values.fullName);
   try {
     const validatedValues = AddPatientInputSchema.parse(values);
     let avatarUrlToStore = `https://placehold.co/100x100.png?text=${validatedValues.fullName.split(" ").map(n=>n[0]).join("")}`;
     let hint = 'person face';
 
     if (validatedValues.avatarFile) {
+      console.log("[ACTION_LOG] addPatient: Avatar file provided. Uploading...");
       const storageRef = ref(storage, `patient-avatars/${Date.now()}-${validatedValues.avatarFile.name}`);
       await uploadBytes(storageRef, validatedValues.avatarFile);
       avatarUrlToStore = await getDownloadURL(storageRef);
       hint = `patient ${validatedValues.fullName}`;
-      console.log("Uploaded patient avatar to:", avatarUrlToStore);
+      console.log("[ACTION_LOG] addPatient: Avatar uploaded to:", avatarUrlToStore);
+    } else {
+      console.log("[ACTION_LOG] addPatient: No avatar file provided. Using placeholder.");
     }
 
     const randomPassword = generateRandomPassword();
@@ -163,21 +193,22 @@ export async function addPatient(
       mobilityStatus: validatedValues.mobilityStatus,
       pathologies: validatedValues.pathologies.split(',').map(p => p.trim()).filter(p => p.length > 0),
       allergies: validatedValues.allergies ? validatedValues.allergies.split(',').map(a => a.trim()).filter(a => a.length > 0) : [],
-      lastVisit: Timestamp.fromDate(new Date()), // Default lastVisit to now
+      lastVisit: Timestamp.fromDate(new Date()), 
       condition: validatedValues.pathologies.split(',')[0]?.trim() || 'N/A',
       status: 'Stable',
       createdAt: serverTimestamp(),
     };
 
+    console.log("[ACTION_LOG] addPatient: Attempting to add document to Firestore.");
     const docRef = await addDoc(collection(db, "patients"), newPatientData);
-    console.log("Patient added to Firestore with ID: ", docRef.id);
-    // Simulate email and admin notification
-    console.log(`Simulating email to ${validatedValues.email} with password: ${randomPassword}`);
-    console.log(`Admin_Notification: New patient ${validatedValues.fullName} (${validatedValues.email}) added with ID ${docRef.id}.`);
+    console.log("[ACTION_LOG] addPatient: Patient added to Firestore with ID: ", docRef.id);
+    
+    console.log(`[ACTION_LOG] addPatient: Simulating email to ${validatedValues.email} with password: ${randomPassword}`);
+    console.log(`[ACTION_LOG] addPatient: Admin_Notification: New patient ${validatedValues.fullName} added with ID ${docRef.id}.`);
 
     return { success: true, message: `Patient ${validatedValues.fullName} added successfully.`, patientId: docRef.id };
   } catch (error: any) {
-    console.error("Error adding patient to Firestore: ", error);
+    console.error("[ACTION_ERROR] addPatient: Error adding patient to Firestore: ", error.code, error.message, error);
     if (error instanceof z.ZodError) {
       return { success: false, message: `Validation failed: ${error.errors.map(e => e.message).join(', ')}` };
     }
@@ -194,29 +225,40 @@ export type NurseListItem = {
   location: string;
   phone: string;
   email: string;
-  avatar: string; // URL
+  avatar: string; 
   status: 'Available' | 'On Duty' | 'Unavailable' | string;
   hint?: string;
-  createdAt?: Timestamp; // Keep as Timestamp for server-side processing
+  createdAt?: Timestamp;
 };
 
 export async function fetchNurses(): Promise<{ data?: NurseListItem[], error?: string }> {
-  console.log("actions.ts: fetchNurses (Firestore)");
+  console.log("[ACTION_LOG] fetchNurses: Initiated.");
   try {
-    const nursesCollection = collection(db, "nurses");
-    const q = query(nursesCollection, orderBy("createdAt", "desc"));
+    const nursesCollectionRef = collection(db, "nurses");
+    const q = query(nursesCollectionRef, orderBy("createdAt", "desc"));
+    console.log("[ACTION_LOG] fetchNurses: Created query. Attempting getDocs...");
     const nursesSnapshot = await getDocs(q);
-    const nursesList = nursesSnapshot.docs.map(doc => {
-      const data = doc.data();
+    console.log(`[ACTION_LOG] fetchNurses: getDocs successful. Found ${nursesSnapshot.docs.length} documents.`);
+    
+    const nursesList = nursesSnapshot.docs.map(docSnap => {
+      const data = docSnap.data();
       return {
-        id: doc.id,
-        ...data,
-        createdAt: data.createdAt, // Keep as Timestamp
+        id: docSnap.id,
+        name: data.name || "N/A",
+        specialty: data.specialty || "N/A",
+        location: data.location || "N/A",
+        phone: data.phone || "N/A",
+        email: data.email || "N/A",
+        avatar: data.avatar || `https://placehold.co/100x100.png?text=N`,
+        status: data.status || "Available",
+        hint: data.hint || 'nurse medical',
+        createdAt: data.createdAt,
       } as NurseListItem;
     });
+    console.log("[ACTION_LOG] fetchNurses: Data mapping complete. Returning data.");
     return { data: nursesList };
   } catch (error: any) {
-    console.error("Error fetching nurses from Firestore:", error);
+    console.error("[ACTION_ERROR] fetchNurses: Error fetching nurses from Firestore:", error.code, error.message, error);
     return { error: `Failed to fetch nurses: ${error.message}` };
   }
 }
@@ -235,21 +277,24 @@ export type AddNurseFormValues = z.infer<typeof AddNurseInputSchema>;
 export async function addNurse(
   values: AddNurseFormValues
 ): Promise<{ success?: boolean; message: string; nurseId?: string }> {
-  console.log("actions.ts: addNurse (Firestore)", values);
+  console.log("[ACTION_LOG] addNurse: Initiated with values:", values.fullName);
    try {
     const validatedValues = AddNurseInputSchema.parse(values);
     let avatarUrlToStore = `https://placehold.co/100x100.png?text=${validatedValues.fullName.split(" ").map(n=>n[0]).join("")}`;
     let hint = 'nurse medical';
 
     if (validatedValues.avatarFile) {
+      console.log("[ACTION_LOG] addNurse: Avatar file provided. Uploading...");
       const storageRef = ref(storage, `nurse-avatars/${Date.now()}-${validatedValues.avatarFile.name}`);
       await uploadBytes(storageRef, validatedValues.avatarFile);
       avatarUrlToStore = await getDownloadURL(storageRef);
       hint = `nurse ${validatedValues.fullName}`;
-      console.log("Uploaded nurse avatar to:", avatarUrlToStore);
+      console.log("[ACTION_LOG] addNurse: Avatar uploaded to:", avatarUrlToStore);
+    } else {
+      console.log("[ACTION_LOG] addNurse: No avatar file provided. Using placeholder.");
     }
 
-    const randomPassword = generateRandomPassword(); // Ensure this function exists in utils
+    const randomPassword = generateRandomPassword(); 
     const newNurseData = {
       name: validatedValues.fullName,
       email: validatedValues.email,
@@ -258,20 +303,20 @@ export async function addNurse(
       phone: validatedValues.phone,
       avatar: avatarUrlToStore,
       hint: hint,
-      status: 'Available' as const, // Set a default status
+      status: 'Available' as const, 
       createdAt: serverTimestamp(),
     };
 
+    console.log("[ACTION_LOG] addNurse: Attempting to add document to Firestore.");
     const docRef = await addDoc(collection(db, "nurses"), newNurseData);
-    console.log("Nurse added to Firestore with ID: ", docRef.id);
-    // Simulate email and admin notification
-    console.log(`Simulating email to ${validatedValues.email} with password: ${randomPassword}`);
-    console.log(`Admin_Notification: New nurse ${validatedValues.fullName} (${validatedValues.email}) added with ID ${docRef.id}.`);
+    console.log("[ACTION_LOG] addNurse: Nurse added to Firestore with ID: ", docRef.id);
+    
+    console.log(`[ACTION_LOG] addNurse: Simulating email to ${validatedValues.email} with password: ${randomPassword}`);
+    console.log(`[ACTION_LOG] addNurse: Admin_Notification: New nurse ${validatedValues.fullName} added with ID ${docRef.id}.`);
 
     return { success: true, message: `Nurse ${validatedValues.fullName} added successfully.`, nurseId: docRef.id };
-  } catch (error: any)
-   {
-    console.error("Error adding nurse to Firestore: ", error);
+  } catch (error: any) {
+    console.error("[ACTION_ERROR] addNurse: Error adding nurse to Firestore: ", error.code, error.message, error);
      if (error instanceof z.ZodError) {
       return { success: false, message: `Validation failed: ${error.errors.map(e => e.message).join(', ')}` };
     }
@@ -293,73 +338,89 @@ export type DashboardStats = {
   availableNursesOnline: string;
   careQualityScore: string;
   careQualityScoreTrend: string;
-  // New fields for chart data
-  patientRegistrationsData?: PatientRegistrationDataPoint[];
-  appointmentStatusData?: AppointmentStatusDataPoint[];
-  nursePerformanceData?: NursePerformanceDataPoint[];
+  patientRegistrationsData: PatientRegistrationDataPoint[];
+  appointmentStatusData: AppointmentStatusDataPoint[];
+  nursePerformanceData: NursePerformanceDataPoint[];
 };
 
 export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, error?: string}> {
-  console.log("actions.ts: fetchDashboardStats (Firestore)");
+  console.log("[ACTION_LOG] fetchDashboardStats: Initiated.");
   try {
-    const patientsCollection = collection(db, "patients");
-    const nursesCollection = collection(db, "nurses");
-    const videoConsultsCollection = collection(db, "videoConsults");
+    const patientsCollectionRef = collection(db, "patients");
+    const nursesCollectionRef = collection(db, "nurses");
+    const videoConsultsCollectionRef = collection(db, "videoConsults");
 
-    // Active Patients
-    const patientCountSnapshot = await getCountFromServer(patientsCollection);
+    console.log("[ACTION_LOG] fetchDashboardStats: Getting counts for patients, nurses, consults.");
+    const [
+      patientCountSnapshot, 
+      nursesSnapshot, // Fetch all nurses to count available ones
+      videoConsultsSnapshot // Fetch all consults for various aggregations
+    ] = await Promise.all([
+      getCountFromServer(patientsCollectionRef),
+      getDocs(query(nursesCollectionRef)), // No specific where clause for total, filter for available client-side or make more specific query
+      getDocs(query(videoConsultsCollectionRef))
+    ]);
+    console.log("[ACTION_LOG] fetchDashboardStats: Counts received.");
+
     const activePatients = patientCountSnapshot.data().count;
+    
+    const availableNurses = nursesSnapshot.docs.filter(doc => doc.data().status === 'Available').length;
+    const totalNurses = nursesSnapshot.docs.length;
 
-    // Available Nurses
-    const availableNursesQuery = query(nursesCollection, where("status", "==", "Available"));
-    const availableNursesSnapshot = await getCountFromServer(availableNursesQuery);
-    const availableNurses = availableNursesSnapshot.data().count;
 
-    // Upcoming Appointments (for today and future)
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayStartTimestamp = Timestamp.fromDate(todayStart);
-
-    const upcomingAppointmentsQuery = query(videoConsultsCollection, where("consultationTime", ">=", todayStartTimestamp), where("status", "==", "scheduled"));
-    const upcomingAppointmentsSnapshot = await getCountFromServer(upcomingAppointmentsQuery);
-    const upcomingAppointments = upcomingAppointmentsSnapshot.data().count;
-
-    // Upcoming Appointments Today
     const tomorrowStart = new Date(todayStart);
     tomorrowStart.setDate(todayStart.getDate() + 1);
     const tomorrowStartTimestamp = Timestamp.fromDate(tomorrowStart);
-    const todayAppointmentsQuery = query(
-        videoConsultsCollection,
-        where("consultationTime", ">=", todayStartTimestamp),
-        where("consultationTime", "<", tomorrowStartTimestamp),
-        where("status", "==", "scheduled")
-    );
-    const todayAppointmentsSnapshot = await getCountFromServer(todayAppointmentsQuery);
-    const upcomingAppointmentsTodayCount = todayAppointmentsSnapshot.data().count;
 
-    // Placeholder data for changes and quality score
+    let upcomingAppointments = 0;
+    let upcomingAppointmentsTodayCount = 0;
+    const statusCounts: { [key: string]: number } = { scheduled: 0, completed: 0, cancelled: 0 };
+    const nursePerformance: { [nurseName: string]: number } = {};
+
+    videoConsultsSnapshot.docs.forEach(doc => {
+      const consultData = doc.data();
+      const consultTime = consultData.consultationTime as Timestamp;
+      
+      if (consultData.status === 'scheduled' && consultTime.toDate() >= todayStart) {
+        upcomingAppointments++;
+        if (consultTime.toDate() < tomorrowStart) {
+          upcomingAppointmentsTodayCount++;
+        }
+      }
+
+      const status = consultData.status as string;
+      if (statusCounts.hasOwnProperty(status)) {
+        statusCounts[status]++;
+      }
+
+      const nurseName = consultData.nurseName as string;
+      if (nurseName) {
+        nursePerformance[nurseName] = (nursePerformance[nurseName] || 0) + 1;
+      }
+    });
+    console.log("[ACTION_LOG] fetchDashboardStats: Consults processed.");
+
     const activePatientsChange = activePatients > 0 ? `+${Math.floor(Math.random()*5 + 1)} since last week` : "N/A";
     const availableNursesOnline = availableNurses > 0 ? `Online: ${Math.floor(Math.random()*availableNurses + 1)}` : "Online: 0";
-    const careQualityScore = `${Math.floor(Math.random() * 10 + 88)}%`; // Example: 88-97%
+    const careQualityScore = `${Math.floor(Math.random() * 10 + 88)}%`; 
     const careQualityScoreTrend = `Up by ${Math.floor(Math.random()*3+1)}% from last month`;
 
-    // Patient Registrations Data
-    const patientsSnapshotForChart = await getDocs(query(patientsCollection, orderBy("createdAt", "asc")));
+    console.log("[ACTION_LOG] fetchDashboardStats: Processing patient registrations data.");
+    const patientsSnapshotForChart = await getDocs(query(patientsCollectionRef, orderBy("createdAt", "asc")));
     const monthlyRegistrations: { [key: string]: number } = {};
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     
-    patientsSnapshotForChart.docs.forEach(doc => {
-      const data = doc.data();
+    patientsSnapshotForChart.docs.forEach(docSnap => {
+      const data = docSnap.data();
       if (data.createdAt instanceof Timestamp) {
         const date = data.createdAt.toDate();
-        const monthYear = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-         // For simplicity, using month name only for the current year, or month + year for past years.
         const displayMonth = date.getFullYear() === new Date().getFullYear() ? monthNames[date.getMonth()] : `${monthNames[date.getMonth()]} '${String(date.getFullYear()).slice(-2)}`;
-
         monthlyRegistrations[displayMonth] = (monthlyRegistrations[displayMonth] || 0) + 1;
       }
     });
-    // Ensure we have data for the last 6 months, even if it's 0
     const patientRegistrationsData: PatientRegistrationDataPoint[] = [];
     const currentJsDate = new Date();
     for (let i = 5; i >= 0; i--) {
@@ -370,41 +431,24 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
             newPatients: monthlyRegistrations[displayMonthKey] || 0,
         });
     }
+    console.log("[ACTION_LOG] fetchDashboardStats: Patient registrations processed.");
 
-
-    // Appointment Status Data
-    const consultsSnapshot = await getDocs(query(videoConsultsCollection));
-    const statusCounts: { [key: string]: number } = { scheduled: 0, completed: 0, cancelled: 0 };
-    consultsSnapshot.docs.forEach(doc => {
-      const status = doc.data().status as string;
-      if (statusCounts.hasOwnProperty(status)) {
-        statusCounts[status]++;
-      }
-    });
     const appointmentStatusData: AppointmentStatusDataPoint[] = [
-      { status: "Completed", count: statusCounts.completed, fill: "var(--color-completed)" },
+      { status: "Completed", count: statusCounts.completed, fill: "var(--color-completed)" }, // Ensure these CSS vars are defined
       { status: "Scheduled", count: statusCounts.scheduled, fill: "var(--color-scheduled)" },
       { status: "Cancelled", count: statusCounts.cancelled, fill: "var(--color-cancelled)" },
     ];
 
-    // Nurse Performance Data (Consults per Nurse)
-    const nursePerformance: { [nurseName: string]: number } = {};
-    consultsSnapshot.docs.forEach(doc => {
-      const nurseName = doc.data().nurseName as string;
-      if (nurseName) {
-        nursePerformance[nurseName] = (nursePerformance[nurseName] || 0) + 1;
-      }
-    });
-    // Define consistent colors for nurses for the chart
     const nurseColors = ["hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))", "hsl(var(--chart-1))", "hsl(var(--chart-2))"];
     const nursePerformanceData: NursePerformanceDataPoint[] = Object.entries(nursePerformance)
       .map(([name, count], index) => ({
         nurseName: name,
         consults: count,
-        fill: nurseColors[index % nurseColors.length] // Cycle through colors
+        fill: nurseColors[index % nurseColors.length] 
       }))
-      .sort((a, b) => b.consults - a.consults) // Sort by most consults
-      .slice(0, 5); // Take top 5 nurses for display
+      .sort((a, b) => b.consults - a.consults) 
+      .slice(0, 5); 
+    console.log("[ACTION_LOG] fetchDashboardStats: Nurse performance processed.");
 
     const stats: DashboardStats = {
       activePatients,
@@ -419,12 +463,12 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
       appointmentStatusData,
       nursePerformanceData,
     };
+    console.log("[ACTION_LOG] fetchDashboardStats: Stats assembly complete. Returning data.");
     return { data: stats };
   } catch (error: any) {
-    console.error("Error fetching dashboard stats from Firestore:", error);
+    console.error("[ACTION_ERROR] fetchDashboardStats: Error fetching dashboard stats from Firestore:", error.code, error.message, error);
     return {
       error: `Could not load dashboard statistics: ${error.message}`,
-      // Return some default/fallback stats to prevent crashes on the frontend
       data: { 
         activePatients: 0, activePatientsChange: "N/A",
         upcomingAppointments: 0, upcomingAppointmentsToday: "N/A",
@@ -446,10 +490,10 @@ export type VideoConsultListItem = {
   patientName: string;
   nurseId: string;
   nurseName: string;
-  consultationTime: string; // Converted to ISO string for client
+  consultationTime: string; 
   dailyRoomUrl: string;
   status: 'scheduled' | 'completed' | 'cancelled';
-  createdAt: string; // Converted to ISO string for client
+  createdAt: string; 
 };
 
 const ScheduleVideoConsultInputSchema = z.object({
@@ -462,31 +506,43 @@ export type ScheduleVideoConsultFormServerValues = z.infer<typeof ScheduleVideoC
 export async function scheduleVideoConsult(
   values: ScheduleVideoConsultFormServerValues
 ): Promise<{ success?: boolean; message: string; consultId?: string; roomUrl?: string }> {
-  console.log("actions.ts: scheduleVideoConsult (Firestore)", values);
+  console.log("[ACTION_LOG] scheduleVideoConsult: Initiated with values:", values.patientId, values.nurseId);
   try {
     const validatedValues = ScheduleVideoConsultInputSchema.parse(values);
 
     const patientDocRef = doc(db, "patients", validatedValues.patientId);
     const nurseDocRef = doc(db, "nurses", validatedValues.nurseId);
 
+    console.log("[ACTION_LOG] scheduleVideoConsult: Fetching patient and nurse documents.");
     const [patientDocSnap, nurseDocSnap] = await Promise.all([
       getDoc(patientDocRef),
       getDoc(nurseDocRef)
     ]);
 
-    if (!patientDocSnap.exists()) return { success: false, message: "Selected patient not found." };
-    if (!nurseDocSnap.exists()) return { success: false, message: "Selected nurse not found." };
+    if (!patientDocSnap.exists()) {
+      console.error("[ACTION_ERROR] scheduleVideoConsult: Selected patient not found:", validatedValues.patientId);
+      return { success: false, message: "Selected patient not found." };
+    }
+    if (!nurseDocSnap.exists()) {
+      console.error("[ACTION_ERROR] scheduleVideoConsult: Selected nurse not found:", validatedValues.nurseId);
+      return { success: false, message: "Selected nurse not found." };
+    }
+    console.log("[ACTION_LOG] scheduleVideoConsult: Patient and nurse documents fetched.");
 
     const patient = patientDocSnap.data() as Omit<PatientListItem, 'id'>;
     const nurse = nurseDocSnap.data() as Omit<NurseListItem, 'id'>;
 
     const dailyCoBaseUrl = process.env.NEXT_PUBLIC_DAILY_CO_BASE_URL;
     if (!dailyCoBaseUrl || dailyCoBaseUrl.includes("YOUR_DAILY_CO_DOMAIN.daily.co") || dailyCoBaseUrl === "https://example.daily.co/") {
-        console.warn("CRITICAL: NEXT_PUBLIC_DAILY_CO_BASE_URL is not set correctly in .env file. Using fallback for logging, but video calls may not work.");
-        return { success: false, message: "Daily.co base URL not configured. Please set NEXT_PUBLIC_DAILY_CO_BASE_URL in your .env file. Found: " + dailyCoBaseUrl}
+        console.warn("[ACTION_WARN] scheduleVideoConsult: NEXT_PUBLIC_DAILY_CO_BASE_URL is not set correctly. Using fallback.");
+        // return { success: false, message: "Daily.co base URL not configured. Please set NEXT_PUBLIC_DAILY_CO_BASE_URL in your .env file. Found: " + dailyCoBaseUrl}
     }
     const roomName = `sanhome-consult-${generateRandomString(8)}`;
-    const dailyRoomUrl = `${dailyCoBaseUrl.endsWith('/') ? dailyCoBaseUrl : dailyCoBaseUrl + '/'}${roomName}`;
+    const effectiveDailyCoBaseUrl = dailyCoBaseUrl && !dailyCoBaseUrl.includes("YOUR_DAILY_CO_DOMAIN.daily.co") && dailyCoBaseUrl !== "https://example.daily.co/"
+                                     ? dailyCoBaseUrl
+                                     : "https://sanhome.daily.co/"; // Default fallback if env var is bad
+    const dailyRoomUrl = `${effectiveDailyCoBaseUrl.endsWith('/') ? effectiveDailyCoBaseUrl : effectiveDailyCoBaseUrl + '/'}${roomName}`;
+    console.log("[ACTION_LOG] scheduleVideoConsult: Generated Daily room URL:", dailyRoomUrl);
 
     const newVideoConsultData = {
       patientId: validatedValues.patientId,
@@ -499,23 +555,22 @@ export async function scheduleVideoConsult(
       createdAt: serverTimestamp(),
     };
 
+    console.log("[ACTION_LOG] scheduleVideoConsult: Attempting to add document to Firestore.");
     const docRef = await addDoc(collection(db, "videoConsults"), newVideoConsultData);
+    console.log("[ACTION_LOG] scheduleVideoConsult: Video consult added to Firestore with ID:", docRef.id);
 
-    // Simulate notifications
-    console.log(`Simulating email to Patient ${patient.name} (${patient.email || 'N/A'}): Video consult scheduled for ${validatedValues.consultationDateTime.toLocaleString()}. Join Link: ${dailyRoomUrl}`);
-    console.log(`Simulating email to Nurse ${nurse.name} (${nurse.email || 'N/A'}): Video consult scheduled with ${patient.name} for ${validatedValues.consultationDateTime.toLocaleString()}. Join Link: ${dailyRoomUrl}`);
-    console.log(`Admin_Notification: Video consult scheduled between ${patient.name} and ${nurse.name} for ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}. ID: ${docRef.id}`);
-
-
+    console.log(`[ACTION_LOG] scheduleVideoConsult: Simulating email to Patient ${patient.name}: Video consult at ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}`);
+    console.log(`[ACTION_LOG] scheduleVideoConsult: Simulating email to Nurse ${nurse.name}: Video consult with ${patient.name} at ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}`);
+    
     return {
       success: true,
-      message: `Video consult scheduled successfully for ${patient.name} with ${nurse.name}. Link: ${dailyRoomUrl}`,
+      message: `Video consult scheduled successfully for ${patient.name} with ${nurse.name}.`,
       consultId: docRef.id,
       roomUrl: dailyRoomUrl
     };
 
   } catch (error: any) {
-    console.error("Error scheduling video consult: ", error);
+    console.error("[ACTION_ERROR] scheduleVideoConsult: Error scheduling video consult: ", error.code, error.message, error);
     if (error instanceof z.ZodError) {
       return { success: false, message: `Validation failed: ${error.errors.map(e => e.message).join(', ')}` };
     }
@@ -524,11 +579,13 @@ export async function scheduleVideoConsult(
 }
 
 export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListItem[], error?: string }> {
-  console.log("actions.ts: fetchVideoConsults (Firestore)");
+  console.log("[ACTION_LOG] fetchVideoConsults: Initiated.");
   try {
-    const consultsCollection = collection(db, "videoConsults");
-    const q = query(consultsCollection, orderBy("consultationTime", "desc"));
+    const consultsCollectionRef = collection(db, "videoConsults");
+    const q = query(consultsCollectionRef, orderBy("consultationTime", "desc"));
+    console.log("[ACTION_LOG] fetchVideoConsults: Created query. Attempting getDocs...");
     const consultsSnapshot = await getDocs(q);
+    console.log(`[ACTION_LOG] fetchVideoConsults: getDocs successful. Found ${consultsSnapshot.docs.length} documents.`);
 
     const consultsList = consultsSnapshot.docs.map(docSnap => {
       const data = docSnap.data();
@@ -544,9 +601,12 @@ export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListIte
         createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
       } as VideoConsultListItem;
     });
+    console.log("[ACTION_LOG] fetchVideoConsults: Data mapping complete. Returning data.");
     return { data: consultsList };
   } catch (error: any) {
-    console.error("Error fetching video consults from Firestore:", error);
+    console.error("[ACTION_ERROR] fetchVideoConsults: Error fetching video consults from Firestore:", error.code, error.message, error);
     return { error: `Failed to fetch video consults: ${error.message}` };
   }
 }
+
+    

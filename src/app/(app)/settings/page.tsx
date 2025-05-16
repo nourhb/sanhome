@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { User, Bell, ShieldLock, Palette, Sun, Moon, Laptop } from "lucide-react";
+import { User, Bell, Shield, Palette, Sun, Moon, Laptop } from "lucide-react"; // Changed ShieldLock to Shield
 import { cn } from "@/lib/utils"
 
 export default function SettingsPage() {
@@ -45,7 +45,7 @@ export default function SettingsPage() {
         <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 mb-6">
           <TabsTrigger value="profile"><User className="w-4 h-4 mr-2 inline-block" />Profile</TabsTrigger>
           <TabsTrigger value="notifications"><Bell className="w-4 h-4 mr-2 inline-block" />Notifications</TabsTrigger>
-          <TabsTrigger value="security"><ShieldLock className="w-4 h-4 mr-2 inline-block" />Security</TabsTrigger>
+          <TabsTrigger value="security"><Shield className="w-4 h-4 mr-2 inline-block" />Security</TabsTrigger>
           <TabsTrigger value="appearance"><Palette className="w-4 h-4 mr-2 inline-block" />Appearance</TabsTrigger>
         </TabsList>
 
@@ -97,7 +97,7 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
         
-        <TabsContent value="security">
+        <TabsContent value="security" id="security"> {/* Added id="security" for the anchor link */}
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle>Security Settings</CardTitle>

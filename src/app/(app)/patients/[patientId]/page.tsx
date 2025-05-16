@@ -42,11 +42,29 @@ type PatientProfilePageProps = {
 
 export default async function PatientProfilePage({ params }: PatientProfilePageProps) {
   // const patient = await fetchPatientById(params.patientId); // API call
-  const patient = MOCK_PATIENT; // Using mock data
+  const patient = MOCK_PATIENT; // Using mock data, assuming patientId '1' or any for now
+                                // In a real app, you'd fetch based on params.patientId and handle not found.
 
-  if (!patient) {
-    return <div>Patient not found.</div>;
+  if (!patient || patient.id !== params.patientId && params.patientId !== '1' && params.patientId !== '2' && params.patientId !== '3' && params.patientId !== '4') {
+     // A simple check for mock data, in reality, you'd have a proper fetch and error handling.
+     // For this mock setup, we'll just use MOCK_PATIENT if any of the list IDs are used.
+     // If not, show patient not found.
+     if (['1','2','3','4'].includes(params.patientId)) {
+        // Modify MOCK_PATIENT slightly for different IDs for demonstration
+        patient.id = params.patientId;
+        patient.name = params.patientId === '1' ? 'Alice Wonderland' : 
+                       params.patientId === '2' ? 'Bob The Builder' :
+                       params.patientId === '3' ? 'Charlie Chaplin' :
+                       params.patientId === '4' ? 'Diana Prince' : 'Eleanor Vance';
+        patient.age = params.patientId === '1' ? 34 : 
+                      params.patientId === '2' ? 52 :
+                      params.patientId === '3' ? 78 :
+                      params.patientId === '4' ? 45 : 72;
+     } else {
+        return <div>Patient not found.</div>;
+     }
   }
+
 
   return (
     <div className="space-y-6">

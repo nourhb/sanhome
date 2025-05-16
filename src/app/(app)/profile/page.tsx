@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Edit3, Mail, Phone, Shield } from "lucide-react";
+import { Edit3, Mail, Phone, Shield } from "lucide-react"; // Changed ShieldLock to Shield
 
 // Mock user data, in a real app this would come from auth context/session
 const currentUser = {
@@ -93,6 +93,7 @@ export default function UserProfilePage() {
             <div className="flex items-center justify-between">
                 <p className="text-sm text-muted-foreground">Manage your password and account security.</p>
                 <Button variant="outline" asChild>
+                    {/* The href should point to the id of the security tab content */}
                     <a href="/settings#security"><Shield className="mr-2 h-4 w-4" /> Security Settings</a>
                 </Button>
             </div>

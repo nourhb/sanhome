@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useState, useTransition } from "react";
 import { format } from "date-fns";
+import { useRouter } from "next/navigation"; // Import useRouter
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,14 +24,17 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn, generateRandomPassword } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { CalendarIcon, Loader2, UserPlus, UploadCloud, Mail, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { addPatient, type AddPatientFormValues } from "@/app/actions"; // Import addPatient server action
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
+// This schema should align with AddPatientFormValues in actions.ts
+// or be imported if identical. For client-side validation.
 const patientFormSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
   age: z.coerce.number().int().positive({ message: "Age must be a positive number." }),
@@ -47,11 +51,12 @@ const patientFormSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
   address: z.string().min(5, { message: "Address is required." }),
   mobilityStatus: z.string().min(3, { message: "Mobility status is required." }),
-  pathologies: z.string().min(3, { message: "Pathologies are required." }),
+  pathologies: z.string().min(3, { message: "Pathologies are required (comma-separated)." }),
   allergies: z.string().optional(),
 });
 
-type PatientFormValues = z.infer<typeof patientFormSchema>;
+type ClientPatientFormValues = z.infer<typeof patientFormSchema>;
+
 
 // Mock data for nurse dropdown - in a real app, fetch this from your database
 const mockNurses = [
@@ -59,14 +64,18 @@ const mockNurses = [
   { id: 'n2', name: 'Nurse Betty Boo' },
   { id: 'n3', name: 'Nurse Charles Xavier' },
   { id: 'n4', name: 'Nurse Diana Prince' },
+  { id: 'n5', name: 'Nurse Nightingale'}, // Added from patient profile mock
 ];
 
 export default function AddPatientPage() {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+  const router = useRouter();
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | undefined>(undefined);
 
-  const form = useForm<PatientFormValues>({
+
+  const form = useForm<ClientPatientFormValues>({
     resolver: zodResolver(patientFormSchema),
     defaultValues: {
       fullName: "",
@@ -83,40 +92,56 @@ export default function AddPatientPage() {
     },
   });
 
-  function onSubmit(values: PatientFormValues) {
+  async function onSubmit(values: ClientPatientFormValues) {
     startTransition(async () => {
-      const randomPassword = generateRandomPassword();
-      console.log("Patient data submitted:", values);
-      console.log("Generated password for new patient:", randomPassword);
+      // In a real app, you'd upload avatarFile here to Firebase Storage or similar,
+      // then get the URL to pass to the addPatient server action.
+      // For now, we'll just pass the filename if a file exists, or undefined.
+      // The server action will use a placeholder if no URL is provided.
+      
+      let avatarUrlForAction: string | undefined = undefined;
+      if (avatarFile) {
+        // Simulate upload and get URL. In a real app:
+        // const storageRef = ref(storage, `patient-avatars/${new Date().getTime()}_${avatarFile.name}`);
+        // await uploadBytes(storageRef, avatarFile);
+        // avatarUrlForAction = await getDownloadURL(storageRef);
+        console.log("Avatar file to be uploaded:", avatarFile.name);
+        // For simulation, we can use a placeholder or pass nothing
+        // and let the action handle a default.
+        // To demonstrate, let's assume it's uploaded and we have a mock URL.
+        // For this example, we'll let the action generate a placeholder.
+      }
 
-      if (values.avatarFile) {
-        console.log("Avatar file details:", {
-          name: values.avatarFile.name,
-          type: values.avatarFile.type,
-          size: values.avatarFile.size,
+
+      const actionValues: AddPatientFormValues = {
+        ...values,
+        avatarFile: avatarFile, // Pass the actual file if needed by server action for upload
+        avatarUrl: avatarUrlForAction, // Or pass the URL if uploaded client-side
+        // pathologies will be passed as string from form, action can parse it
+      };
+      
+      const result = await addPatient(actionValues);
+
+      if (result.success) {
+        toast({
+          title: "Patient Added",
+          description: result.message,
+        });
+        form.reset();
+        setAvatarPreview(null);
+        setAvatarFile(undefined);
+        if (result.patientId) {
+          router.push(`/patients/${result.patientId}`); // Redirect to the new patient's profile
+        } else {
+          router.push('/patients'); // Fallback redirect
+        }
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Failed to Add Patient",
+          description: result.message,
         });
       }
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000)); 
-      
-      // Simulate sending email to patient
-      console.log(`Simulating email to ${values.email} with password: ${randomPassword}`);
-      toast({
-        title: "Patient Added & Notified",
-        description: `${values.fullName} has been added. An email with login credentials has been (simulated) sent to ${values.email}.`,
-      });
-
-      // Simulate admin notification
-      console.log(`Admin_Notification: New patient ${values.fullName} (${values.email}) added.`);
-       toast({
-        title: "Admin Notified",
-        description: `You (admin) have been notified about the new patient: ${values.fullName}.`,
-        variant: "default",
-      });
-      
-      form.reset();
-      setAvatarPreview(null);
     });
   }
 
@@ -163,7 +188,9 @@ export default function AddPatientPage() {
                     <FormItem>
                       <FormLabel>Age</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="e.g., 72" {...field} />
+                        <Input type="number" placeholder="e.g., 72" {...field} 
+                         onChange={e => field.onChange(e.target.value === '' ? undefined : +e.target.value)}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -174,7 +201,7 @@ export default function AddPatientPage() {
               <FormField
                 control={form.control}
                 name="avatarFile"
-                render={({ field }) => (
+                render={({ field: { onChange, value, ...restField } }) => ( // Destructure field for manual handling
                   <FormItem>
                     <FormLabel>Profile Picture</FormLabel>
                     <div className="flex items-center gap-4">
@@ -188,7 +215,8 @@ export default function AddPatientPage() {
                           accept="image/*"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            field.onChange(file); 
+                            onChange(file); // Inform react-hook-form about the file for validation
+                            setAvatarFile(file); // Store the file separately for preview/upload
                             if (file) {
                               const reader = new FileReader();
                               reader.onloadend = () => {
@@ -197,8 +225,10 @@ export default function AddPatientPage() {
                               reader.readAsDataURL(file);
                             } else {
                               setAvatarPreview(null);
+                              setAvatarFile(undefined);
                             }
                           }}
+                          {...restField} // Pass rest of field props like name, ref
                           className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
                         />
                       </FormControl>

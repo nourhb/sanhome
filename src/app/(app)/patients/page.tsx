@@ -3,27 +3,21 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { PlusCircle, Eye } from 'lucide-react';
+import { PlusCircle, Eye, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { fetchPatients, type PatientListItem } from '@/app/actions';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
-// Mock data for patient list
-const mockPatients = [
-  { id: '1', name: 'Alice Wonderland', age: 34, lastVisit: '2024-07-15', condition: 'Diabetes Type 1', status: 'Stable' },
-  { id: '2', name: 'Bob The Builder', age: 52, lastVisit: '2024-07-20', condition: 'Hypertension', status: 'Needs Follow-up' },
-  { id: '3', name: 'Charlie Chaplin', age: 78, lastVisit: '2024-07-01', condition: 'Arthritis', status: 'Stable' },
-  { id: '4', name: 'Diana Prince', age: 45, lastVisit: '2024-06-25', condition: 'Post-surgery Recovery', status: 'Improving' },
-];
-
-type PatientStatus = 'Stable' | 'Needs Follow-up' | 'Improving';
+type PatientStatus = 'Stable' | 'Needs Follow-up' | 'Improving' | string; // Allow string for future statuses
 
 const getStatusBadgeVariant = (status: PatientStatus) => {
   switch (status) {
     case 'Stable':
-      return 'default'; // Primary
+      return 'default'; 
     case 'Improving':
-      return 'secondary'; // Secondary
+      return 'secondary'; 
     case 'Needs Follow-up':
-      return 'outline'; // Accent based (outline with accent border)
+      return 'outline'; 
     default:
       return 'outline';
   }
@@ -34,15 +28,58 @@ const getStatusBadgeClassNames = (status: PatientStatus) => {
       case 'Stable':
         return 'bg-primary/10 text-primary border-primary/30 hover:bg-primary/20';
       case 'Improving':
-        return 'bg-secondary/10 text-secondary-foreground border-secondary/30 hover:bg-secondary/20';
+        return 'bg-secondary/20 text-secondary-foreground border-secondary/40 hover:bg-secondary/30'; // Adjusted for better contrast
       case 'Needs Follow-up':
-        return 'border-accent/50 text-accent-foreground bg-accent/10 hover:bg-accent/20'; // Warm yellow accent
+        return 'border-accent text-accent-foreground bg-accent/10 hover:bg-accent/20'; 
       default:
-        return '';
+        return 'border-muted-foreground/30 text-muted-foreground bg-muted/20'; // Default for unknown statuses
     }
 }
 
-export default function PatientsListPage() {
+export default async function PatientsListPage() {
+  const { data: patients, error } = await fetchPatients();
+
+  if (error) {
+    return (
+      <div className="container mx-auto p-4">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error Loading Patients</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (!patients || patients.length === 0) {
+     return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">Patient Management</h1>
+            <p className="text-muted-foreground">View, add, and manage patient records.</p>
+          </div>
+          <Button asChild>
+            <Link href="/patients/new">
+              <PlusCircle className="mr-2 h-4 w-4" /> Add New Patient
+            </Link>
+          </Button>
+        </div>
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle>All Patients</CardTitle>
+            <CardDescription>A list of all registered patients in the system.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center py-10">
+              <p className="text-muted-foreground">No patients found. Get started by adding a new patient.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -75,7 +112,7 @@ export default function PatientsListPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mockPatients.map((patient) => (
+              {patients.map((patient: PatientListItem) => (
                 <TableRow key={patient.id}>
                   <TableCell className="font-medium">{patient.name}</TableCell>
                   <TableCell>{patient.age}</TableCell>
@@ -83,8 +120,8 @@ export default function PatientsListPage() {
                   <TableCell>{patient.condition}</TableCell>
                   <TableCell>
                     <Badge 
-                        variant={getStatusBadgeVariant(patient.status as PatientStatus)}
-                        className={getStatusBadgeClassNames(patient.status as PatientStatus)}
+                        variant={getStatusBadgeVariant(patient.status)}
+                        className={getStatusBadgeClassNames(patient.status)}
                     >
                       {patient.status}
                     </Badge>
@@ -105,4 +142,3 @@ export default function PatientsListPage() {
     </div>
   );
 }
-

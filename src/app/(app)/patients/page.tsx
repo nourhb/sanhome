@@ -8,9 +8,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PlusCircle, Eye, AlertCircle, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { fetchPatients, type PatientListItem } from '@/app/actions';
+import type { PatientListItem } from '@/app/actions'; // Keep type definition
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/auth-context';
+import { db } from '@/lib/firebase'; // Import db
+import { collection, getDocs, Timestamp, query, orderBy } from 'firebase/firestore'; // Import Firestore functions
 
 type PatientStatus = 'Stable' | 'Needs Follow-up' | 'Improving' | string;
 
@@ -49,6 +51,55 @@ export default function PatientsListPage() {
   useEffect(() => {
     console.log("[CLIENT_LOG] PatientsListPage useEffect triggered. AuthLoading:", authLoading, "CurrentUser:", !!currentUser);
 
+    async function loadPatientsDirectly() {
+      console.log("[CLIENT_LOG] PatientsListPage loadPatientsDirectly: Initiating direct Firestore fetch.");
+      setIsLoading(true);
+      setError(null);
+      setPatients(null);
+
+      try {
+        const patientsCollectionRef = collection(db, "patients");
+        // const q = query(patientsCollectionRef); // Simplified query
+        const q = query(patientsCollectionRef, orderBy("createdAt", "desc"));
+        console.log("[CLIENT_LOG] PatientsListPage loadPatientsDirectly: Created collection reference. Attempting getDocs...");
+        
+        const patientsSnapshot = await getDocs(q);
+        console.log(`[CLIENT_LOG] PatientsListPage loadPatientsDirectly: getDocs successful. Found ${patientsSnapshot.docs.length} documents.`);
+        
+        const patientsList = patientsSnapshot.docs.map(docSnap => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            name: data.name || "N/A",
+            age: data.age || 0,
+            avatarUrl: data.avatarUrl || `https://placehold.co/100x100.png?text=P`,
+            joinDate: data.joinDate instanceof Timestamp ? data.joinDate.toDate().toISOString().split('T')[0] : data.joinDate || new Date().toISOString().split('T')[0],
+            primaryNurse: data.primaryNurse || "N/A",
+            phone: data.phone || "N/A",
+            email: data.email || "N/A",
+            address: data.address || "N/A",
+            mobilityStatus: data.mobilityStatus || "N/A",
+            pathologies: Array.isArray(data.pathologies) ? data.pathologies : [],
+            allergies: Array.isArray(data.allergies) ? data.allergies : [],
+            lastVisit: data.lastVisit instanceof Timestamp ? data.lastVisit.toDate().toISOString().split('T')[0] : data.lastVisit || new Date().toISOString().split('T')[0],
+            condition: data.condition || "N/A",
+            status: data.status || "N/A",
+            hint: data.hint || 'person face',
+            createdAt: data.createdAt, // Keep original timestamp if needed for sorting, or convert
+          } as PatientListItem;
+        });
+        console.log("[CLIENT_LOG] PatientsListPage loadPatientsDirectly: Data mapping complete. Setting patients state.");
+        setPatients(patientsList);
+      } catch (e: any) {
+        console.error("[CLIENT_ERROR] PatientsListPage loadPatientsDirectly: Exception during direct Firestore fetch:", e);
+        setError(e.message || "An unexpected error occurred while fetching patients directly.");
+        setPatients(null);
+      } finally {
+        console.log("[CLIENT_LOG] PatientsListPage loadPatientsDirectly: Fetch finished, setting component isLoading to false.");
+        setIsLoading(false);
+      }
+    }
+
     if (authLoading) {
       console.log("[CLIENT_LOG] PatientsListPage: Auth is loading, setting component isLoading to true.");
       setIsLoading(true);
@@ -62,34 +113,10 @@ export default function PatientsListPage() {
       setPatients(null); 
       return;
     }
+    
+    console.log("[CLIENT_LOG] PatientsListPage: User is authenticated (currentUser.uid:", currentUser.uid, "). Proceeding to load patients directly.");
+    loadPatientsDirectly();
 
-    console.log("[CLIENT_LOG] PatientsListPage: User is authenticated (currentUser.uid:", currentUser.uid, "). Proceeding to load patients.");
-    async function loadPatients() {
-      console.log("[CLIENT_LOG] PatientsListPage loadPatients: Setting component isLoading to true for data fetch.");
-      setIsLoading(true); 
-      setError(null);
-      try {
-        console.log("[CLIENT_LOG] PatientsListPage loadPatients: Calling fetchPatients server action.");
-        const result = await fetchPatients();
-        if (result.data) {
-          console.log(`[CLIENT_LOG] PatientsListPage loadPatients: fetchPatients successful, data received: ${result.data.length} patients`);
-          setPatients(result.data);
-        } else {
-          console.error("[CLIENT_ERROR] PatientsListPage loadPatients: fetchPatients returned an error or no data:", result.error);
-          setError(result.error || "Failed to load patients (no data).");
-          setPatients(null);
-        }
-      } catch (e: any) {
-        console.error("[CLIENT_ERROR] PatientsListPage loadPatients: Exception during fetchPatients call:", e);
-        setError(e.message || "An unexpected error occurred while fetching patients.");
-        setPatients(null);
-      } finally {
-        console.log("[CLIENT_LOG] PatientsListPage loadPatients: fetch finished, setting component isLoading to false.");
-        setIsLoading(false);
-      }
-    }
-
-    loadPatients();
   }, [currentUser, authLoading]);
 
   if (isLoading) {
@@ -111,7 +138,7 @@ export default function PatientsListPage() {
           <AlertTitle>Error Loading Patients</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-         <Button onClick={() => router.push('/dashboard')} className="mt-4">Go to Dashboard</Button>
+         {/* <Button onClick={() => router.push('/dashboard')} className="mt-4">Go to Dashboard</Button> */}
       </div>
     );
   }
@@ -138,13 +165,14 @@ export default function PatientsListPage() {
           </CardHeader>
           <CardContent>
             <div className="text-center py-10">
-              <p className="text-muted-foreground">No patients found. Get started by adding a new patient or check if you are logged in.</p>
+              <p className="text-muted-foreground">No patients found. Get started by adding a new patient or ensure you are logged in and have the necessary permissions.</p>
             </div>
           </CardContent>
         </Card>
       </div>
     );
   }
+
   console.log("[CLIENT_LOG] PatientsListPage render: Rendering patient table with", patients.length, "patients.");
   return (
     <div className="space-y-6">
@@ -208,5 +236,4 @@ export default function PatientsListPage() {
     </div>
   );
 }
-
     

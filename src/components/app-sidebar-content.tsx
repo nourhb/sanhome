@@ -15,6 +15,7 @@ import {
   Bell,
   Activity,
   HeartPulse,
+  ShieldCog, // Added for Admin
 } from "lucide-react"
 
 import { APP_NAME } from "@/lib/constants"
@@ -46,12 +47,17 @@ const secondaryMenuItems = [
   { href: "/video-consult", label: "Video Consult", icon: Video },
 ]
 
+const adminMenuItems = [
+  { href: "/admin/dashboard", label: "Admin Dashboard", icon: ShieldCog },
+]
+
 
 export function AppSidebarContent() {
   const pathname = usePathname()
 
   const isActive = (path: string) => pathname === path || (path !== "/dashboard" && pathname.startsWith(path))
-
+  // In a real app, you'd get the user's role from context or session
+  const userRole = "admin"; // Placeholder for demonstration
 
   return (
     <>
@@ -115,6 +121,38 @@ export function AppSidebarContent() {
             </SidebarMenuItem>
           ))}
         </SidebarMenu>
+        {userRole === 'admin' && (
+          <>
+            <Separator className="my-4" />
+            <SidebarMenu>
+              <SidebarMenuItem>
+                 <span className="px-2 text-xs font-semibold text-muted-foreground group-data-[collapsible=icon]:hidden">Admin</span>
+              </SidebarMenuItem>
+              {adminMenuItems.map((item) => (
+                <SidebarMenuItem key={item.label}>
+                  <Link href={item.href} legacyBehavior passHref>
+                    <SidebarMenuButton
+                      asChild
+                      variant="default"
+                      className={cn(
+                        "w-full justify-start",
+                        isActive(item.href)
+                          ? "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90"
+                          : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      )}
+                      tooltip={item.label}
+                    >
+                      <a>
+                        <item.icon className="mr-2" />
+                        <span className="group-data-[collapsible=icon]:hidden truncate">{item.label}</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </Link>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </>
+        )}
       </SidebarContent>
       <SidebarFooter className="p-2">
         <Separator className="my-2" />
@@ -142,4 +180,3 @@ export function AppSidebarContent() {
     </>
   )
 }
-

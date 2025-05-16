@@ -1,12 +1,39 @@
+
+"use client"
+
+import * as React from "react"
+import { useTheme } from "next-themes"
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { User, Bell, ShieldLock, Palette } from "lucide-react";
+import { User, Bell, ShieldLock, Palette, Sun, Moon, Laptop } from "lucide-react";
+import { cn } from "@/lib/utils"
 
 export default function SettingsPage() {
+  const { setTheme, theme, resolvedTheme, themes } = useTheme()
+  const [mounted, setMounted] = React.useState(false)
+  const [fontSize, setFontSize] = React.useState(100);
+
+  React.useEffect(() => setMounted(true), [])
+
+  if (!mounted) {
+    // Avoid hydration mismatch by not rendering theme-dependent UI on the server.
+    // Or render a skeleton/loader.
+    return null;
+  }
+  
+  const handleFontSizeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newSize = parseInt(event.target.value, 10);
+    setFontSize(newSize);
+    // In a real app, you would also apply this font size to the document body
+    // document.documentElement.style.fontSize = `${newSize}%`;
+  };
+
+
   return (
     <div className="space-y-6">
       <div>
@@ -105,21 +132,53 @@ export default function SettingsPage() {
               <CardTitle>Appearance Settings</CardTitle>
               <CardDescription>Customize the look and feel of the application.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div>
-                <Label className="mb-2 block">Theme</Label>
-                <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1">Light Mode</Button>
-                    <Button variant="outline" className="flex-1">Dark Mode</Button>
-                    <Button variant="outline" className="flex-1">System Default</Button>
+                <Label className="mb-2 block font-medium">Theme</Label>
+                <p className="text-sm text-muted-foreground mb-3">Select your preferred color scheme.</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button 
+                    variant={theme === "light" ? "default" : "outline"} 
+                    onClick={() => setTheme("light")}
+                    className={cn("flex-1 justify-start gap-2", theme === "light" && "ring-2 ring-ring")}
+                  >
+                    <Sun className="h-4 w-4" /> Light
+                  </Button>
+                  <Button 
+                    variant={theme === "dark" ? "default" : "outline"} 
+                    onClick={() => setTheme("dark")}
+                    className={cn("flex-1 justify-start gap-2", theme === "dark" && "ring-2 ring-ring")}
+                  >
+                    <Moon className="h-4 w-4" /> Dark
+                  </Button>
+                  <Button 
+                    variant={theme === "system" ? "default" : "outline"} 
+                    onClick={() => setTheme("system")}
+                    className={cn("flex-1 justify-start gap-2", theme === "system" && "ring-2 ring-ring")}
+                  >
+                    <Laptop className="h-4 w-4" /> System
+                  </Button>
                 </div>
+                 <p className="text-xs text-muted-foreground mt-2">
+                    Current theme: <span className="font-semibold capitalize">{resolvedTheme}</span>
+                 </p>
               </div>
                <div>
-                <Label htmlFor="fontSize" className="mb-2 block">Font Size</Label>
-                <Input type="range" id="fontSize" min="80" max="120" defaultValue="100" step="5" />
-                <p className="text-xs text-muted-foreground mt-1 text-center">Current: 100%</p>
+                <Label htmlFor="fontSize" className="mb-2 block font-medium">Font Size</Label>
+                 <p className="text-sm text-muted-foreground mb-3">Adjust the application font size.</p>
+                <Input 
+                    type="range" 
+                    id="fontSize" 
+                    min="80" max="120" 
+                    value={fontSize} 
+                    onChange={handleFontSizeChange}
+                    step="5" 
+                 />
+                <p className="text-xs text-muted-foreground mt-1 text-center">Current: {fontSize}%</p>
               </div>
-              <Button>Save Appearance Settings</Button>
+              {/* This button doesn't do anything for theme/font size currently, 
+                  as theme is instant and font size would need more setup */}
+              {/* <Button>Save Appearance Settings</Button> */}
             </CardContent>
           </Card>
         </TabsContent>

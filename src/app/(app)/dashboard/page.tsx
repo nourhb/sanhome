@@ -3,16 +3,16 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Users, CalendarCheck, Stethoscope, AlertCircle, Loader2, CheckCheck, TrendingDown, BarChartHorizontalBig, LineChart as LineChartIcon, PieChart as PieChartIconLucide, ListChecks } from "lucide-react"; // Added new icons
+import { Activity, Users, CalendarCheck, Stethoscope, AlertCircle, Loader2, CheckCheck, TrendingDown, BarChartHorizontalBig, LineChart as LineChartIcon, PieChart as PieChartIconLucide, ListChecks, ClockIcon } from "lucide-react"; 
 import Image from "next/image";
-import { fetchDashboardStats, type DashboardStats } from "@/app/actions";
+import { fetchDashboardStats, type DashboardStats, type PatientRegistrationDataPoint, type AppointmentStatusDataPoint, type NursePerformanceDataPoint } from "@/app/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from "@/contexts/auth-context";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend, PieChart, Pie, Cell } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 
-// Mock data for new charts - this would ideally come from fetchDashboardStats or dedicated actions
-const appointmentsByTypeData = [
+// Mock data for Appointments by Type chart (as this data is not in videoConsults)
+const appointmentsByTypeDataMock = [
   { type: "Check-up", count: 150, fill: "var(--color-checkup)" },
   { type: "Med Review", count: 90, fill: "var(--color-medreview)" },
   { type: "Wound Care", count: 60, fill: "var(--color-woundcare)" },
@@ -20,29 +20,16 @@ const appointmentsByTypeData = [
   { type: "Consult", count: 75, fill: "var(--color-consult)" },
 ];
 
-const patientRegistrationsData = [
-  { month: "Jan", newPatients: 10 },
-  { month: "Feb", newPatients: 15 },
-  { month: "Mar", newPatients: 12 },
-  { month: "Apr", newPatients: 18 },
-  { month: "May", newPatients: 25 },
-  { month: "Jun", newPatients: 22 },
-];
+// Mock data for small stat cards that are not easily aggregated from current DB structure
+const mockAdditionalStats = {
+    completedAppointments: 78, 
+    cancellationRate: "5%",
+    avgResponseTime: "2.5 hrs",
+    openSupportTickets: 3,
+};
 
-const appointmentStatusData = [
-  { status: "Completed", count: 185, fill: "var(--color-completed)" },
-  { status: "Scheduled", count: 65, fill: "var(--color-scheduled)" },
-  { status: "Cancelled", count: 22, fill: "var(--color-cancelled)" },
-];
 
-const nursePerformanceData = [
-  { nurseName: "Nurse Joy", tasks: 45, fill: "var(--color-nurseJoy)" },
-  { nurseName: "Nurse Alex", tasks: 38, fill: "var(--color-nurseAlex)" },
-  { nurseName: "Nurse Betty", tasks: 52, fill: "var(--color-nurseBetty)" },
-  { nurseName: "Nurse Charles", tasks: 30, fill: "var(--color-nurseCharles)" },
-];
-
-const chartConfigAppointments = {
+const chartConfigAppointmentsMock = {
   count: { label: "Count" },
   checkup: { label: "Check-up", color: "hsl(var(--chart-1))" },
   medreview: { label: "Med Review", color: "hsl(var(--chart-2))" },
@@ -60,17 +47,14 @@ const chartConfigRegistrations = {
 
 const chartConfigAppointmentStatus = {
   count: { label: "Count" },
-  completed: { label: "Completed", color: "hsl(var(--chart-1))" }, // Green
-  scheduled: { label: "Scheduled", color: "hsl(var(--chart-2))" }, // Blue
-  cancelled: { label: "Cancelled", color: "hsl(var(--destructive))" }, // Red
+  completed: { label: "Completed", color: "hsl(var(--chart-1))" },
+  scheduled: { label: "Scheduled", color: "hsl(var(--chart-2))" },
+  cancelled: { label: "Cancelled", color: "hsl(var(--destructive))" },
 };
 
 const chartConfigNursePerformance = {
-  tasks: { label: "Tasks Completed" },
-  nurseJoy: { label: "Nurse Joy", color: "hsl(var(--chart-3))" },
-  nurseAlex: { label: "Nurse Alex", color: "hsl(var(--chart-4))" },
-  nurseBetty: { label: "Nurse Betty", color: "hsl(var(--chart-5))" },
-  nurseCharles: { label: "Nurse Charles", color: "hsl(var(--chart-1))" }
+  consults: { label: "Consults" },
+  // Colors will be applied directly via 'fill' in NursePerformanceDataPoint
 };
 
 
@@ -79,12 +63,6 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Mock additional stats that might come from an expanded DashboardStats type
-  const additionalStats = {
-    completedAppointments: stats ? Math.floor(stats.upcomingAppointments * 0.85) : 78, // Example calculation
-    cancellationRate: "5%",
-  };
 
   useEffect(() => {
     if (authLoading) {
@@ -110,7 +88,10 @@ export default function DashboardPage() {
       };
       getStats();
     } else {
+      // If user is not logged in, don't attempt to load stats, or handle appropriately
       setIsLoading(false);
+      // Optionally set an error or a message like "Please log in to view dashboard"
+      // setError("User not authenticated. Please log in to view dashboard.");
     }
   }, [currentUser, authLoading]);
 
@@ -226,10 +207,10 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <ChartContainer config={chartConfigRegistrations} className="h-[250px] w-full">
-                  <LineChart data={patientRegistrationsData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                  <LineChart data={stats.patientRegistrationsData || []} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false}/>
                     <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
-                    <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
+                    <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false}/>
                     <Tooltip
                       cursor={false}
                       content={<ChartTooltipContent indicator="line" />}
@@ -243,17 +224,18 @@ export default function DashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center"><BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary" />Appointments by Type</CardTitle>
+                <CardDescription className="text-xs">Note: This chart uses mock data as "appointment type" is not currently stored in the database.</CardDescription>
               </CardHeader>
               <CardContent>
-                 <ChartContainer config={chartConfigAppointments} className="h-[250px] w-full">
-                  <BarChart data={appointmentsByTypeData} layout="vertical" margin={{ right: 20, left: 10 }}>
+                 <ChartContainer config={chartConfigAppointmentsMock} className="h-[250px] w-full">
+                  <BarChart data={appointmentsByTypeDataMock} layout="vertical" margin={{ right: 20, left: 10 }}>
                     <CartesianGrid horizontal={false} />
                     <XAxis type="number" hide/>
                     <YAxis dataKey="type" type="category" tickLine={false} axisLine={false} tickMargin={8} width={100} fontSize={12} />
                     <Tooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
                     <Legend content={<ChartLegendContent />} />
                     <Bar dataKey="count" barSize={15} radius={4}>
-                      {appointmentsByTypeData.map((entry) => (
+                      {appointmentsByTypeDataMock.map((entry) => (
                         <Cell key={`cell-${entry.type}`} fill={entry.fill} />
                       ))}
                     </Bar>
@@ -269,8 +251,8 @@ export default function DashboardPage() {
                 <ChartContainer config={chartConfigAppointmentStatus} className="h-[250px] w-full">
                   <PieChart>
                     <Tooltip content={<ChartTooltipContent hideLabel />} />
-                    <Pie data={appointmentStatusData} dataKey="count" nameKey="status" cx="50%" cy="50%" innerRadius={50} outerRadius={80} labelLine={false} label={({name, percent}) => `${name}: ${(percent * 100).toFixed(0)}%`}>
-                      {appointmentStatusData.map((entry) => (
+                    <Pie data={stats.appointmentStatusData || []} dataKey="count" nameKey="status" cx="50%" cy="50%" innerRadius={50} outerRadius={80} labelLine={false} label={({name, percent}) => `${name}: ${(percent * 100).toFixed(0)}%`}>
+                      {(stats.appointmentStatusData || []).map((entry) => (
                         <Cell key={`cell-${entry.status}`} fill={entry.fill} />
                       ))}
                     </Pie>
@@ -282,20 +264,17 @@ export default function DashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center"><Users className="mr-2 h-5 w-5 text-primary" />Nurse Performance</CardTitle>
-                <CardDescription>Tasks completed by nurses.</CardDescription>
+                <CardDescription>Consults handled by nurses (Top 5).</CardDescription>
               </CardHeader>
               <CardContent>
                 <ChartContainer config={chartConfigNursePerformance} className="h-[250px] w-full">
-                  <BarChart data={nursePerformanceData} layout="vertical" margin={{ left: 30, right: 20 }}>
+                  <BarChart data={stats.nursePerformanceData || []} layout="vertical" margin={{ left: 30, right: 20 }}>
                     <CartesianGrid horizontal={false} />
-                    <XAxis type="number" dataKey="tasks" fontSize={12} />
+                    <XAxis type="number" dataKey="consults" fontSize={12} allowDecimals={false} />
                     <YAxis dataKey="nurseName" type="category" tickLine={false} axisLine={false} tickMargin={8} width={100} fontSize={12} />
                     <Tooltip content={<ChartTooltipContent />} />
-                    {/* Removed legend for this chart as nurse names are on Y-axis 
-                        <Legend content={<ChartLegendContent nameKey="nurseName" />} />
-                    */}
-                    <Bar dataKey="tasks" label={{ position: 'right', fill: 'hsl(var(--foreground))', fontSize: 10 }} barSize={15} radius={4}>
-                      {nursePerformanceData.map((entry) => (
+                    <Bar dataKey="consults" label={{ position: 'right', fill: 'hsl(var(--foreground))', fontSize: 10 }} barSize={15} radius={4}>
+                      {(stats.nursePerformanceData || []).map((entry) => (
                         <Cell key={`cell-${entry.nurseName}`} fill={entry.fill} />
                       ))}
                     </Bar>
@@ -311,8 +290,8 @@ export default function DashboardPage() {
                     <CheckCheck className="h-5 w-5 text-green-500" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">{additionalStats.completedAppointments}</div>
-                    <p className="text-xs text-muted-foreground">+12 since last week</p>
+                    <div className="text-2xl font-bold">{mockAdditionalStats.completedAppointments}</div>
+                    <p className="text-xs text-muted-foreground">+12 since last week (mock)</p>
                 </CardContent>
              </Card>
              <Card className="hover:shadow-md transition-shadow duration-300">
@@ -321,8 +300,8 @@ export default function DashboardPage() {
                     <TrendingDown className="h-5 w-5 text-red-500" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">{additionalStats.cancellationRate}</div>
-                    <p className="text-xs text-muted-foreground">Improved from 7% last month</p>
+                    <div className="text-2xl font-bold">{mockAdditionalStats.cancellationRate}</div>
+                    <p className="text-xs text-muted-foreground">Improved from 7% (mock)</p>
                 </CardContent>
              </Card>
              <Card className="hover:shadow-md transition-shadow duration-300">
@@ -331,8 +310,8 @@ export default function DashboardPage() {
                     <ClockIcon className="h-5 w-5 text-blue-500" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">2.5 hrs</div>
-                    <p className="text-xs text-muted-foreground">-0.5 hrs from last week</p>
+                    <div className="text-2xl font-bold">{mockAdditionalStats.avgResponseTime}</div>
+                    <p className="text-xs text-muted-foreground">-0.5 hrs from last week (mock)</p>
                 </CardContent>
              </Card>
              <Card className="hover:shadow-md transition-shadow duration-300">
@@ -341,8 +320,8 @@ export default function DashboardPage() {
                     <AlertCircle className="h-5 w-5 text-orange-500" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">3</div>
-                    <p className="text-xs text-muted-foreground">Unresolved</p>
+                    <div className="text-2xl font-bold">{mockAdditionalStats.openSupportTickets}</div>
+                    <p className="text-xs text-muted-foreground">Unresolved (mock)</p>
                 </CardContent>
              </Card>
           </div>
@@ -352,5 +331,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-    

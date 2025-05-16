@@ -7,9 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Video, LogIn, LogOut, AlertCircle } from "lucide-react";
+import { Video, LogIn, LogOut, AlertCircle, CalendarPlus } from "lucide-react"; // Added CalendarPlus
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import Link from 'next/link'; // Added Link
 
 const CALL_OPTIONS = {
   showLeaveButton: true,
@@ -113,16 +114,23 @@ export default function VideoConsultPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Video Consultation</h1>
-        <p className="text-muted-foreground">Secure video calls with patients and other healthcare professionals.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Video Consultation</h1>
+          <p className="text-muted-foreground">Secure video calls with patients and other healthcare professionals.</p>
+        </div>
+        <Button asChild variant="outline">
+          <Link href="/video-consult/schedule">
+            <CalendarPlus className="mr-2 h-4 w-4" /> Schedule New Consult
+          </Link>
+        </Button>
       </div>
 
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="flex items-center"><Video className="mr-2 h-5 w-5 text-primary" /> Video Call</CardTitle>
           <CardDescription>
-            {callState === 'idle' || callState === 'left' || callState === 'error' ? 'Enter a Daily.co room URL to start or join a consultation.' : 'Video call in progress.'}
+            {callState === 'idle' || callState === 'left' || callState === 'error' ? 'Enter a Daily.co room URL to start or join a consultation, or schedule a new one.' : 'Video call in progress.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -161,7 +169,7 @@ export default function VideoConsultPage() {
           <div 
             ref={callFrameRef} 
             className={`aspect-video bg-muted rounded-lg shadow-inner ${callState === 'joined' ? 'block' : 'hidden'}`}
-            style={{ height: callState === 'joined' ? 'auto' : '0px', minHeight: callState === 'joined' ? '450px' : '0px' }} // Ensure space for the iframe
+            style={{ height: callState === 'joined' ? 'auto' : '0px', minHeight: callState === 'joined' ? '450px' : '0px' }} 
           >
             {/* Daily.co iframe will be created here by the SDK */}
           </div>
@@ -186,13 +194,14 @@ export default function VideoConsultPage() {
         </CardHeader>
         <CardContent>
             <ul className="list-disc pl-5 space-y-1 text-sm text-blue-600 dark:text-blue-300">
-                <li>This page uses Daily.co Prebuilt UI.</li>
-                <li>You need to enter a valid Daily.co room URL to join a call. Create rooms via your Daily.co dashboard or API.</li>
-                <li>For dynamic room creation or more custom call UI, further integration with Daily.co's SDK and APIs is required.</li>
-                <li>PipeCat integration for AI voice features would be an additional, complex step involving its own SDK and potentially backend services.</li>
+                <li>This page uses Daily.co Prebuilt UI for joining calls.</li>
+                <li>To schedule, click the "Schedule New Consult" button.</li>
+                <li>Scheduled consults will generate a unique Daily.co room URL (ensure your Daily.co domain is correctly set up in `src/app/actions.ts` or via an environment variable `NEXT_PUBLIC_DAILY_CO_BASE_URL`).</li>
+                <li>Dynamic room creation via Daily.co API is typically handled backend-side for security.</li>
             </ul>
         </CardContent>
     </Card>
     </div>
   );
 }
+

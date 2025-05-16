@@ -3,13 +3,13 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Users, CalendarCheck, Stethoscope, AlertCircle, Loader2, CheckCheck, TrendingDown, BarChartHorizontalBig, LineChart as LineChartIcon } from "lucide-react"; // Added new icons
+import { Activity, Users, CalendarCheck, Stethoscope, AlertCircle, Loader2, CheckCheck, TrendingDown, BarChartHorizontalBig, LineChart as LineChartIcon, PieChart as PieChartIconLucide, ListChecks } from "lucide-react"; // Added new icons
 import Image from "next/image";
 import { fetchDashboardStats, type DashboardStats } from "@/app/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from "@/contexts/auth-context";
-import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend, PieChart, Pie, Cell } from "recharts";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 
 // Mock data for new charts - this would ideally come from fetchDashboardStats or dedicated actions
 const appointmentsByTypeData = [
@@ -29,6 +29,19 @@ const patientRegistrationsData = [
   { month: "Jun", newPatients: 22 },
 ];
 
+const appointmentStatusData = [
+  { status: "Completed", count: 185, fill: "var(--color-completed)" },
+  { status: "Scheduled", count: 65, fill: "var(--color-scheduled)" },
+  { status: "Cancelled", count: 22, fill: "var(--color-cancelled)" },
+];
+
+const nursePerformanceData = [
+  { nurseName: "Nurse Joy", tasks: 45, fill: "var(--color-nurseJoy)" },
+  { nurseName: "Nurse Alex", tasks: 38, fill: "var(--color-nurseAlex)" },
+  { nurseName: "Nurse Betty", tasks: 52, fill: "var(--color-nurseBetty)" },
+  { nurseName: "Nurse Charles", tasks: 30, fill: "var(--color-nurseCharles)" },
+];
+
 const chartConfigAppointments = {
   count: { label: "Count" },
   checkup: { label: "Check-up", color: "hsl(var(--chart-1))" },
@@ -43,6 +56,21 @@ const chartConfigRegistrations = {
     label: "New Patients",
     color: "hsl(var(--chart-1))",
   },
+};
+
+const chartConfigAppointmentStatus = {
+  count: { label: "Count" },
+  completed: { label: "Completed", color: "hsl(var(--chart-1))" }, // Green
+  scheduled: { label: "Scheduled", color: "hsl(var(--chart-2))" }, // Blue
+  cancelled: { label: "Cancelled", color: "hsl(var(--destructive))" }, // Red
+};
+
+const chartConfigNursePerformance = {
+  tasks: { label: "Tasks Completed" },
+  nurseJoy: { label: "Nurse Joy", color: "hsl(var(--chart-3))" },
+  nurseAlex: { label: "Nurse Alex", color: "hsl(var(--chart-4))" },
+  nurseBetty: { label: "Nurse Betty", color: "hsl(var(--chart-5))" },
+  nurseCharles: { label: "Nurse Charles", color: "hsl(var(--chart-1))" }
 };
 
 
@@ -185,7 +213,6 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
       
-      {/* New Analytics Section */}
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="text-xl font-semibold">Detailed Analytics</CardTitle>
@@ -207,7 +234,7 @@ export default function DashboardPage() {
                       cursor={false}
                       content={<ChartTooltipContent indicator="line" />}
                     />
-                    <Legend />
+                    <Legend content={<ChartLegendContent />} />
                     <Line type="monotone" dataKey="newPatients" stroke="var(--color-newPatients)" strokeWidth={2} dot={{r:4}} activeDot={{r:6}} />
                   </LineChart>
                 </ChartContainer>
@@ -218,30 +245,66 @@ export default function DashboardPage() {
                 <CardTitle className="text-lg flex items-center"><BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary" />Appointments by Type</CardTitle>
               </CardHeader>
               <CardContent>
-                <ChartContainer config={chartConfigAppointments} className="h-[250px] w-full">
+                 <ChartContainer config={chartConfigAppointments} className="h-[250px] w-full">
                   <BarChart data={appointmentsByTypeData} layout="vertical" margin={{ right: 20, left: 10 }}>
                     <CartesianGrid horizontal={false} />
                     <XAxis type="number" hide/>
                     <YAxis dataKey="type" type="category" tickLine={false} axisLine={false} tickMargin={8} width={100} fontSize={12} />
-                    <Tooltip
-                      cursor={false}
-                      content={<ChartTooltipContent indicator="dot" hideLabel />}
-                    />
-                    <Legend />
-                    {Object.keys(chartConfigAppointments)
-                        .filter(key => key !== 'count') // Exclude the generic 'count' key used for dataKey
-                        .map((key) => (
-                            <Bar key={key} dataKey="count" name={chartConfigAppointments[key as keyof typeof chartConfigAppointments].label as string} fill={`var(--color-${key})`} radius={4} barSize={15} />
-                        ))
-                    }
-                     {/* Fallback generic bar if specific fills aren't working or for simplicity: */}
-                     {/* <Bar dataKey="count" fill="var(--color-count)" radius={4} barSize={20} name="Count" /> */}
+                    <Tooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
+                    <Legend content={<ChartLegendContent />} />
+                    <Bar dataKey="count" barSize={15} radius={4}>
+                      {appointmentsByTypeData.map((entry) => (
+                        <Cell key={`cell-${entry.type}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center"><PieChartIconLucide className="mr-2 h-5 w-5 text-primary" />Appointment Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ChartContainer config={chartConfigAppointmentStatus} className="h-[250px] w-full">
+                  <PieChart>
+                    <Tooltip content={<ChartTooltipContent hideLabel />} />
+                    <Pie data={appointmentStatusData} dataKey="count" nameKey="status" cx="50%" cy="50%" innerRadius={50} outerRadius={80} labelLine={false} label={({name, percent}) => `${name}: ${(percent * 100).toFixed(0)}%`}>
+                      {appointmentStatusData.map((entry) => (
+                        <Cell key={`cell-${entry.status}`} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <Legend content={<ChartLegendContent />} />
+                  </PieChart>
+                </ChartContainer>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center"><Users className="mr-2 h-5 w-5 text-primary" />Nurse Performance</CardTitle>
+                <CardDescription>Tasks completed by nurses.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ChartContainer config={chartConfigNursePerformance} className="h-[250px] w-full">
+                  <BarChart data={nursePerformanceData} layout="vertical" margin={{ left: 30, right: 20 }}>
+                    <CartesianGrid horizontal={false} />
+                    <XAxis type="number" dataKey="tasks" fontSize={12} />
+                    <YAxis dataKey="nurseName" type="category" tickLine={false} axisLine={false} tickMargin={8} width={100} fontSize={12} />
+                    <Tooltip content={<ChartTooltipContent />} />
+                    {/* Removed legend for this chart as nurse names are on Y-axis 
+                        <Legend content={<ChartLegendContent nameKey="nurseName" />} />
+                    */}
+                    <Bar dataKey="tasks" label={{ position: 'right', fill: 'hsl(var(--foreground))', fontSize: 10 }} barSize={15} radius={4}>
+                      {nursePerformanceData.map((entry) => (
+                        <Cell key={`cell-${entry.nurseName}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ChartContainer>
               </CardContent>
             </Card>
           </div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mt-6">
              <Card className="hover:shadow-md transition-shadow duration-300">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Completed Appointments</CardTitle>
@@ -262,7 +325,26 @@ export default function DashboardPage() {
                     <p className="text-xs text-muted-foreground">Improved from 7% last month</p>
                 </CardContent>
              </Card>
-             {/* Add two more small stat cards here if desired */}
+             <Card className="hover:shadow-md transition-shadow duration-300">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Avg. Response Time</CardTitle>
+                    <ClockIcon className="h-5 w-5 text-blue-500" />
+                </CardHeader>
+                <CardContent>
+                    <div className="text-2xl font-bold">2.5 hrs</div>
+                    <p className="text-xs text-muted-foreground">-0.5 hrs from last week</p>
+                </CardContent>
+             </Card>
+             <Card className="hover:shadow-md transition-shadow duration-300">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Open Support Tickets</CardTitle>
+                    <AlertCircle className="h-5 w-5 text-orange-500" />
+                </CardHeader>
+                <CardContent>
+                    <div className="text-2xl font-bold">3</div>
+                    <p className="text-xs text-muted-foreground">Unresolved</p>
+                </CardContent>
+             </Card>
           </div>
         </CardContent>
       </Card>
@@ -271,3 +353,4 @@ export default function DashboardPage() {
   );
 }
 
+    

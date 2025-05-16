@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,11 +22,12 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Loader2, UserPlus, UploadCloud, Mail } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { generateRandomPassword } from "@/lib/utils";
+import { addNurse, type AddNurseFormValues as ActionAddNurseFormValues } from "@/app/actions"; 
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
+// Client-side schema aligns with ActionAddNurseFormValues
 const nurseFormSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
   email: z.string().email({ message: "Please enter a valid email address." }),
@@ -41,14 +43,15 @@ const nurseFormSchema = z.object({
     ).optional(),
 });
 
-type NurseFormValues = z.infer<typeof nurseFormSchema>;
+type ClientNurseFormValues = z.infer<typeof nurseFormSchema>;
 
 export default function AddNursePage() {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+  const router = useRouter();
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
 
-  const form = useForm<NurseFormValues>({
+  const form = useForm<ClientNurseFormValues>({
     resolver: zodResolver(nurseFormSchema),
     defaultValues: {
       fullName: "",
@@ -60,41 +63,31 @@ export default function AddNursePage() {
     },
   });
 
-  function onSubmit(values: NurseFormValues) {
+  function onSubmit(values: ClientNurseFormValues) {
     startTransition(async () => {
-      const randomPassword = generateRandomPassword();
-      console.log("Nurse data submitted:", values);
-      console.log("Generated password for new nurse:", randomPassword);
-
-      if (values.avatarFile) {
-        console.log("Avatar file details:", {
-          name: values.avatarFile.name,
-          type: values.avatarFile.type,
-          size: values.avatarFile.size,
+      // The AddNurseFormValues type in actions.ts expects avatarFile
+      const actionValues: ActionAddNurseFormValues = { 
+        ...values,
+        avatarFile: values.avatarFile, // Pass the File object
+      };
+      
+      const result = await addNurse(actionValues);
+      
+      if (result.success) {
+        toast({
+          title: "Nurse Added & Notified",
+          description: result.message,
         });
-        // In a real app, you would upload values.avatarFile to Firebase Storage
+        form.reset();
+        setAvatarPreview(null);
+        router.push("/nurses"); // Redirect to nurses list page
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Failed to Add Nurse",
+          description: result.message,
+        });
       }
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000)); 
-      
-      // Simulate sending email to nurse
-      console.log(`Simulating email to ${values.email} with password: ${randomPassword}`);
-      toast({
-        title: "Nurse Added & Notified",
-        description: `${values.fullName} has been added. An email with login credentials has been (simulated) sent to ${values.email}.`,
-      });
-
-      // Simulate admin notification
-      console.log(`Admin_Notification: New nurse ${values.fullName} (${values.email}) added.`);
-      toast({
-        title: "Admin Notified",
-        description: `You (admin) have been notified about the new nurse: ${values.fullName}.`,
-        variant: "default", 
-      });
-
-      form.reset();
-      setAvatarPreview(null);
     });
   }
 
@@ -191,7 +184,7 @@ export default function AddNursePage() {
               <FormField
                 control={form.control}
                 name="avatarFile"
-                render={({ field }) => (
+                render={({ field: { onChange, value, ref, ...restField } }) => (
                   <FormItem>
                     <FormLabel>Profile Picture</FormLabel>
                      <div className="flex items-center gap-4">
@@ -203,9 +196,10 @@ export default function AddNursePage() {
                         <Input
                           type="file"
                           accept="image/*"
+                          ref={ref}
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            field.onChange(file); // Inform react-hook-form
+                            onChange(file); 
                             if (file) {
                               const reader = new FileReader();
                               reader.onloadend = () => {
@@ -216,6 +210,7 @@ export default function AddNursePage() {
                               setAvatarPreview(null);
                             }
                           }}
+                          {...restField}
                           className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
                         />
                       </FormControl>

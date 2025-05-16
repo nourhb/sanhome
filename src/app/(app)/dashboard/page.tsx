@@ -1,8 +1,26 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Users, CalendarCheck, Stethoscope } from "lucide-react";
-import Image from "next/image";
 
-export default function DashboardPage() {
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Activity, Users, CalendarCheck, Stethoscope, AlertCircle } from "lucide-react";
+import Image from "next/image";
+import { fetchDashboardStats, type DashboardStats } from "@/app/actions";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+export default async function DashboardPage() {
+  const { data: stats, error } = await fetchDashboardStats();
+
+  if (error || !stats) {
+    return (
+      <div className="container mx-auto p-4">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error Loading Dashboard Data</AlertTitle>
+          <AlertDescription>{error || "Could not load dashboard statistics."}</AlertDescription>
+        </Alert>
+        {/* Optionally, render a fallback static dashboard or a simpler loading state */}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <Card className="shadow-lg">
@@ -24,8 +42,8 @@ export default function DashboardPage() {
             <Users className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">152</div>
-            <p className="text-xs text-muted-foreground">+12 since last week</p>
+            <div className="text-2xl font-bold">{stats.activePatients}</div>
+            <p className="text-xs text-muted-foreground">{stats.activePatientsChange}</p>
           </CardContent>
         </Card>
         <Card className="hover:shadow-xl transition-shadow duration-300">
@@ -34,8 +52,8 @@ export default function DashboardPage() {
             <CalendarCheck className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">34</div>
-            <p className="text-xs text-muted-foreground">5 today</p>
+            <div className="text-2xl font-bold">{stats.upcomingAppointments}</div>
+            <p className="text-xs text-muted-foreground">{stats.upcomingAppointmentsToday}</p>
           </CardContent>
         </Card>
         <Card className="hover:shadow-xl transition-shadow duration-300">
@@ -44,8 +62,8 @@ export default function DashboardPage() {
             <Stethoscope className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">28</div>
-            <p className="text-xs text-muted-foreground">Online now</p>
+            <div className="text-2xl font-bold">{stats.availableNurses}</div>
+            <p className="text-xs text-muted-foreground">{stats.availableNursesOnline}</p>
           </CardContent>
         </Card>
         <Card className="hover:shadow-xl transition-shadow duration-300">
@@ -54,8 +72,8 @@ export default function DashboardPage() {
             <Activity className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">92.5%</div>
-            <p className="text-xs text-muted-foreground">Above average</p>
+            <div className="text-2xl font-bold">{stats.careQualityScore}</div>
+            <p className="text-xs text-muted-foreground">{stats.careQualityScoreTrend}</p>
           </CardContent>
         </Card>
       </div>

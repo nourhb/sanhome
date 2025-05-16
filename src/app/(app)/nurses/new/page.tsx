@@ -5,7 +5,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useState, useTransition } from "react";
-import Image from "next/image";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,15 +18,17 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, UserPlus, UploadCloud } from "lucide-react";
+import { Loader2, UserPlus, UploadCloud, Mail } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { generateRandomPassword } from "@/lib/utils";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
 const nurseFormSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
+  email: z.string().email({ message: "Please enter a valid email address." }),
   specialty: z.string().min(3, { message: "Specialty is required." }),
   location: z.string().min(3, { message: "Location is required." }),
   phone: z.string().min(10, { message: "Phone number must be at least 10 digits." }),
@@ -51,6 +52,7 @@ export default function AddNursePage() {
     resolver: zodResolver(nurseFormSchema),
     defaultValues: {
       fullName: "",
+      email: "",
       specialty: "",
       location: "",
       phone: "",
@@ -60,7 +62,10 @@ export default function AddNursePage() {
 
   function onSubmit(values: NurseFormValues) {
     startTransition(async () => {
+      const randomPassword = generateRandomPassword();
       console.log("Nurse data submitted:", values);
+      console.log("Generated password for new nurse:", randomPassword);
+
       if (values.avatarFile) {
         console.log("Avatar file details:", {
           name: values.avatarFile.name,
@@ -69,11 +74,25 @@ export default function AddNursePage() {
         });
         // In a real app, you would upload values.avatarFile to Firebase Storage
       }
+      
+      // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1000)); 
+      
+      // Simulate sending email to nurse
+      console.log(`Simulating email to ${values.email} with password: ${randomPassword}`);
       toast({
-        title: "Nurse Added",
-        description: `${values.fullName} has been successfully added.`,
+        title: "Nurse Added & Notified",
+        description: `${values.fullName} has been added. An email with login credentials has been (simulated) sent to ${values.email}.`,
       });
+
+      // Simulate admin notification
+      console.log(`Admin_Notification: New nurse ${values.fullName} (${values.email}) added.`);
+      toast({
+        title: "Admin Notified",
+        description: `You (admin) have been notified about the new nurse: ${values.fullName}.`,
+        variant: "default", 
+      });
+
       form.reset();
       setAvatarPreview(null);
     });
@@ -109,6 +128,22 @@ export default function AddNursePage() {
                     <FormLabel>Full Name</FormLabel>
                     <FormControl>
                       <Input placeholder="e.g., Alex Ray" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email Address</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input type="email" placeholder="e.g., nurse.alex@example.com" {...field} className="pl-10" />
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

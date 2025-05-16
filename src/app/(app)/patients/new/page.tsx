@@ -6,7 +6,6 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useState, useTransition } from "react";
 import { format } from "date-fns";
-import Image from "next/image";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,8 +22,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
-import { CalendarIcon, Loader2, UserPlus, UploadCloud } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn, generateRandomPassword } from "@/lib/utils";
+import { CalendarIcon, Loader2, UserPlus, UploadCloud, Mail, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -42,7 +42,7 @@ const patientFormSchema = z.object({
       "Only .jpg, .jpeg, .png and .webp formats are supported."
     ).optional(),
   joinDate: z.date({ required_error: "Join date is required." }),
-  primaryNurse: z.string().min(2, { message: "Primary nurse name is required." }),
+  primaryNurse: z.string().min(1, { message: "Primary nurse selection is required." }),
   phone: z.string().min(10, { message: "Phone number must be at least 10 digits." }),
   email: z.string().email({ message: "Please enter a valid email address." }),
   address: z.string().min(5, { message: "Address is required." }),
@@ -52,6 +52,14 @@ const patientFormSchema = z.object({
 });
 
 type PatientFormValues = z.infer<typeof patientFormSchema>;
+
+// Mock data for nurse dropdown - in a real app, fetch this from your database
+const mockNurses = [
+  { id: 'n1', name: 'Nurse Alex Ray' },
+  { id: 'n2', name: 'Nurse Betty Boo' },
+  { id: 'n3', name: 'Nurse Charles Xavier' },
+  { id: 'n4', name: 'Nurse Diana Prince' },
+];
 
 export default function AddPatientPage() {
   const [isPending, startTransition] = useTransition();
@@ -77,21 +85,36 @@ export default function AddPatientPage() {
 
   function onSubmit(values: PatientFormValues) {
     startTransition(async () => {
+      const randomPassword = generateRandomPassword();
       console.log("Patient data submitted:", values);
+      console.log("Generated password for new patient:", randomPassword);
+
       if (values.avatarFile) {
         console.log("Avatar file details:", {
           name: values.avatarFile.name,
           type: values.avatarFile.type,
           size: values.avatarFile.size,
         });
-        // In a real app, you would upload values.avatarFile to a storage service (e.g., Firebase Storage)
-        // and save the URL.
       }
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000)); 
+      
+      // Simulate sending email to patient
+      console.log(`Simulating email to ${values.email} with password: ${randomPassword}`);
       toast({
-        title: "Patient Added",
-        description: `${values.fullName} has been successfully added.`,
+        title: "Patient Added & Notified",
+        description: `${values.fullName} has been added. An email with login credentials has been (simulated) sent to ${values.email}.`,
       });
+
+      // Simulate admin notification
+      console.log(`Admin_Notification: New patient ${values.fullName} (${values.email}) added.`);
+       toast({
+        title: "Admin Notified",
+        description: `You (admin) have been notified about the new patient: ${values.fullName}.`,
+        variant: "default",
+      });
+      
       form.reset();
       setAvatarPreview(null);
     });
@@ -165,7 +188,7 @@ export default function AddPatientPage() {
                           accept="image/*"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            field.onChange(file); // Inform react-hook-form
+                            field.onChange(file); 
                             if (file) {
                               const reader = new FileReader();
                               reader.onloadend = () => {
@@ -234,9 +257,21 @@ export default function AddPatientPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Primary Nurse</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Nurse Nightingale" {...field} />
-                      </FormControl>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                             <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <SelectValue placeholder="Select a nurse" className="pl-10" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {mockNurses.map(nurse => (
+                            <SelectItem key={nurse.id} value={nurse.name}>
+                              {nurse.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -265,7 +300,10 @@ export default function AddPatientPage() {
                         <FormItem>
                         <FormLabel>Email Address</FormLabel>
                         <FormControl>
-                            <Input type="email" placeholder="e.g., eleanor.vance@example.com" {...field} />
+                           <div className="relative">
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input type="email" placeholder="e.g., eleanor.vance@example.com" {...field} className="pl-10" />
+                          </div>
                         </FormControl>
                         <FormMessage />
                         </FormItem>
@@ -352,4 +390,3 @@ export default function AddPatientPage() {
     </div>
   );
 }
-

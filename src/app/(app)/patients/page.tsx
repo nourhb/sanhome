@@ -44,35 +44,47 @@ export default function PatientsListPage() {
   const { currentUser, loading: authLoading } = useAuth();
   const [patients, setPatients] = useState<PatientListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // True initially: covers auth and initial data load
 
   useEffect(() => {
+    console.log("PatientsListPage useEffect triggered. AuthLoading:", authLoading, "CurrentUser:", !!currentUser);
+
     if (authLoading) {
-      return;
-    }
-    if (!currentUser) {
-      // Or handle redirect to login, though layout should handle this
-      setError("User not authenticated. Please log in.");
-      setIsLoading(false);
-      setPatients([]); // Clear patients if user logs out
+      console.log("Auth is loading, setting isLoading to true.");
+      setIsLoading(true);
       return;
     }
 
+    if (!currentUser) {
+      console.log("No current user. Setting error and stopping load.");
+      setError("User not authenticated. Please log in to view patients.");
+      setIsLoading(false);
+      setPatients(null); 
+      return;
+    }
+
+    // If we reach here, authLoading is false and currentUser exists.
+    console.log("User is authenticated, proceeding to load patients.");
     async function loadPatients() {
-      setIsLoading(true);
+      setIsLoading(true); // Set loading true for the data fetch operation
       setError(null);
       try {
+        console.log("Calling fetchPatients server action.");
         const result = await fetchPatients();
         if (result.data) {
+          console.log("fetchPatients successful, data received:", result.data.length, "patients");
           setPatients(result.data);
         } else {
+          console.error("fetchPatients returned an error or no data:", result.error);
           setError(result.error || "Failed to load patients (no data).");
-          setPatients([]); // Ensure patients is an array in case of error
+          setPatients(null);
         }
       } catch (e: any) {
+        console.error("Exception during fetchPatients call:", e);
         setError(e.message || "An unexpected error occurred while fetching patients.");
-        setPatients([]);
+        setPatients(null);
       } finally {
+        console.log("loadPatients finished, setting isLoading to false.");
         setIsLoading(false);
       }
     }
@@ -80,7 +92,7 @@ export default function PatientsListPage() {
     loadPatients();
   }, [currentUser, authLoading]);
 
-  if (isLoading || authLoading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
@@ -122,7 +134,7 @@ export default function PatientsListPage() {
           </CardHeader>
           <CardContent>
             <div className="text-center py-10">
-              <p className="text-muted-foreground">No patients found. Get started by adding a new patient.</p>
+              <p className="text-muted-foreground">No patients found. Get started by adding a new patient or check if you are logged in.</p>
             </div>
           </CardContent>
         </Card>

@@ -7,10 +7,11 @@ import {
   type PersonalizedCareSuggestionsOutput 
 } from '@/ai/flows/personalized-care-suggestions';
 import { z } from 'zod';
-import { generateRandomPassword, generateRandomString } from '@/lib/utils'; // Added generateRandomString
-import { db, storage } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp, query, where } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { generateRandomPassword, generateRandomString } from '@/lib/utils';
+// Firebase imports are removed or commented out as we are using mock data
+// import { db, storage } from '@/lib/firebase';
+// import { collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp, query, where } from 'firebase/firestore';
+// import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const PersonalizedCareSuggestionsInputSchema = z.object({
   patientName: z.string().min(1, "Patient name is required."),
@@ -49,64 +50,64 @@ export type PatientListItem = {
   pathologies: string[];
   allergies: string[];
   lastVisit: string; 
-  condition: string;
+  condition: string; 
   status: string;
   hint?: string;
   currentMedications?: Array<{ name: string; dosage: string }>;
   recentVitals?: { date: string; bp: string; hr: string; temp: string; glucose: string };
-  createdAt?: Timestamp; 
+  // createdAt?: Timestamp; // Replaced with string for mock
+  createdAt?: string; 
 };
 
-export async function fetchPatients(): Promise<{ data?: PatientListItem[], error?: string }> {
-  try {
-    const patientsCollection = collection(db, "patients");
-    const querySnapshot = await getDocs(patientsCollection);
-    const patientsData = querySnapshot.docs.map(doc => {
-      const data = doc.data();
-      return { 
-        id: doc.id, 
-        ...data,
-        joinDate: data.joinDate instanceof Timestamp ? data.joinDate.toDate().toISOString().split('T')[0] : typeof data.joinDate === 'string' ? data.joinDate : new Date().toISOString().split('T')[0],
-        lastVisit: data.lastVisit instanceof Timestamp ? data.lastVisit.toDate().toISOString().split('T')[0] : typeof data.lastVisit === 'string' ? data.lastVisit : new Date().toISOString().split('T')[0],
-        pathologies: Array.isArray(data.pathologies) ? data.pathologies : [],
-        allergies: Array.isArray(data.allergies) ? data.allergies : [],
-      } as PatientListItem;
-    });
-    return { data: patientsData };
-  } catch (e) {
-    console.error("Error fetching patients from Firestore:", e);
-    return { error: "Failed to fetch patients." };
+// Mock data for patients
+let mockPatients: PatientListItem[] = [
+  {
+    id: "pat1", name: "Alice Wonderland", age: 30, avatarUrl: "https://placehold.co/100x100.png?text=AW", joinDate: "2023-01-15", primaryNurse: "Nurse Alex Ray", phone: "555-0101", email: "alice@example.com", address: "123 Main St, Wonderland", mobilityStatus: "Fully Mobile", pathologies: ["Migraines"], allergies: ["Pollen"], lastVisit: "2024-07-15", condition: "Stable", status: "Stable", hint: "woman face" ,
+    currentMedications: [{ name: "Sumatriptan", dosage: "50mg as needed" }],
+    recentVitals: { date: "2024-07-15", bp: "120/80 mmHg", hr: "70 bpm", temp: "37.0°C", glucose: "90 mg/dL" }
+  },
+  { 
+    id: "pat2", name: "Bob The Builder", age: 45, avatarUrl: "https://placehold.co/100x100.png?text=BB", joinDate: "2023-03-20", primaryNurse: "Nurse Betty Boo", phone: "555-0102", email: "bob@example.com", address: "456 Construct Ave, Builderville", mobilityStatus: "Ambulatory", pathologies: ["Hypertension"], allergies: ["Dust Mites"], lastVisit: "2024-07-20", condition: "Hypertension", status: "Needs Follow-up", hint: "man construction" ,
+    currentMedications: [{ name: "Lisinopril", dosage: "10mg daily" }],
+    recentVitals: { date: "2024-07-20", bp: "140/90 mmHg", hr: "75 bpm", temp: "36.8°C", glucose: "100 mg/dL" }
+  },
+  { 
+    id: "pat3", name: "Eleanor Vance", age: 72, avatarUrl: "https://placehold.co/100x100.png?text=EV", joinDate: "2023-05-12", primaryNurse: "Nurse Nightingale", phone: "+1 (555) 123-4567", email: "eleanor.vance@example.com", address: "456 Oak Avenue, Springfield, IL", mobilityStatus: "Ambulatory with cane, difficulty with stairs", pathologies: ["Hypertension", "Osteoarthritis", "Type 2 Diabetes (diet-controlled)"], allergies: ["Penicillin", "Shellfish"], lastVisit: '2024-07-22', condition: 'COPD', status: 'Stable', hint: 'elderly person' ,
+    currentMedications: [
+      { name: "Lisinopril", dosage: "10mg daily" },
+      { name: "Metformin", dosage: "500mg twice daily" },
+      { name: "Acetaminophen", dosage: "500mg as needed for pain" },
+    ],
+    recentVitals: { date: "2024-07-28", bp: "135/85 mmHg", hr: "72 bpm", temp: "36.8°C", glucose: "110 mg/dL" },
+    createdAt: new Date().toISOString(),
   }
+];
+
+export async function fetchPatients(): Promise<{ data?: PatientListItem[], error?: string }> {
+  console.log("actions.ts: fetchPatients (mock)");
+  await new Promise(resolve => setTimeout(resolve, 200)); // Simulate network delay
+  return { data: [...mockPatients] };
 }
 
 export async function fetchPatientById(id: string): Promise<{ data?: PatientListItem, error?: string }> {
-  try {
-    const patientDocRef = doc(db, "patients", id);
-    const docSnap = await getDoc(patientDocRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      const patientData = { 
-        id: docSnap.id, 
-        ...data,
-        joinDate: data.joinDate instanceof Timestamp ? data.joinDate.toDate().toISOString().split('T')[0] : typeof data.joinDate === 'string' ? data.joinDate : new Date().toISOString().split('T')[0],
-        lastVisit: data.lastVisit instanceof Timestamp ? data.lastVisit.toDate().toISOString().split('T')[0] : typeof data.lastVisit === 'string' ? data.lastVisit : new Date().toISOString().split('T')[0],
-        pathologies: Array.isArray(data.pathologies) ? data.pathologies : [],
-        allergies: Array.isArray(data.allergies) ? data.allergies : [],
-        currentMedications: data.currentMedications || [ 
-          { name: "Lisinopril", dosage: "10mg daily" },
-          { name: "Metformin", dosage: "500mg twice daily" },
-        ],
-        recentVitals: data.recentVitals || {
-          date: "2024-07-30", bp: "140/90 mmHg", hr: "75 bpm", temp: "37.0°C", glucose: "120 mg/dL"
-        },
-      } as PatientListItem;
-      return { data: patientData };
-    } else {
-      return { error: "Patient not found." };
-    }
-  } catch (e) {
-    console.error("Error fetching patient by ID from Firestore:", e);
-    return { error: "Failed to fetch patient details." };
+  console.log(`actions.ts: fetchPatientById (mock) for id: ${id}`);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  const patient = mockPatients.find(p => p.id === id);
+  if (patient) {
+    // Ensure currentMedications and recentVitals have default values if not present
+    const patientData = {
+      ...patient,
+      currentMedications: patient.currentMedications || [
+        { name: "Lisinopril", dosage: "10mg daily" },
+        { name: "Metformin", dosage: "500mg twice daily" },
+      ],
+      recentVitals: patient.recentVitals || {
+        date: "2024-07-30", bp: "140/90 mmHg", hr: "75 bpm", temp: "37.0°C", glucose: "120 mg/dL"
+      },
+    };
+    return { data: patientData };
+  } else {
+    return { error: "Patient not found." };
   }
 }
 
@@ -114,7 +115,7 @@ const AddPatientInputSchema = z.object({
   fullName: z.string().min(2),
   age: z.coerce.number().int().positive(),
   avatarFile: z.custom<File | undefined>().optional(),
-  avatarUrl: z.string().url().optional(),
+  avatarUrl: z.string().url().optional(), // Keep this for potential direct URL input if needed
   joinDate: z.date(),
   primaryNurse: z.string().min(1),
   phone: z.string().min(10),
@@ -129,26 +130,32 @@ export type AddPatientFormValues = z.infer<typeof AddPatientInputSchema>;
 export async function addPatient(
   values: AddPatientFormValues
 ): Promise<{ success?: boolean; message: string; patientId?: string }> {
+  console.log("actions.ts: addPatient (mock)", values);
+  await new Promise(resolve => setTimeout(resolve, 500));
   try {
     const validatedValues = AddPatientInputSchema.parse(values);
+    
     let avatarUrlToStore = validatedValues.avatarUrl || `https://placehold.co/100x100.png?text=${validatedValues.fullName.split(" ").map(n=>n[0]).join("")}`;
     let hint = 'person face';
 
     if (validatedValues.avatarFile) {
-      const storageRef = ref(storage, `patient-avatars/${Date.now()}_${validatedValues.avatarFile.name}`);
-      await uploadBytes(storageRef, validatedValues.avatarFile);
-      avatarUrlToStore = await getDownloadURL(storageRef);
-      hint = `patient ${validatedValues.fullName}`; 
+      // Simulate file upload: In a real scenario, you'd upload to cloud storage and get a URL.
+      // For mock, we'll just log it and use a placeholder.
+      console.log("Simulating upload for file:", validatedValues.avatarFile.name);
+      avatarUrlToStore = `https://placehold.co/100x100.png?text=${validatedValues.fullName.split(" ").map(n=>n[0]).join("")}`; // Generic placeholder
+      hint = `patient ${validatedValues.fullName}`;
     }
-
-    const randomPassword = generateRandomPassword();
     
-    const patientDataForFirestore = {
+    const randomPassword = generateRandomPassword();
+    const newPatientId = `pat${Date.now()}`;
+
+    const newPatient: PatientListItem = {
+      id: newPatientId,
       name: validatedValues.fullName,
       age: validatedValues.age,
       avatarUrl: avatarUrlToStore,
       hint: hint,
-      joinDate: Timestamp.fromDate(validatedValues.joinDate),
+      joinDate: validatedValues.joinDate.toISOString().split('T')[0],
       primaryNurse: validatedValues.primaryNurse,
       phone: validatedValues.phone,
       email: validatedValues.email,
@@ -156,26 +163,25 @@ export async function addPatient(
       mobilityStatus: validatedValues.mobilityStatus,
       pathologies: validatedValues.pathologies.split(',').map(p => p.trim()).filter(p => p.length > 0),
       allergies: validatedValues.allergies ? validatedValues.allergies.split(',').map(a => a.trim()).filter(a => a.length > 0) : [],
-      lastVisit: Timestamp.fromDate(new Date()), 
+      lastVisit: new Date().toISOString().split('T')[0], 
       condition: validatedValues.pathologies.split(',')[0]?.trim() || 'N/A',
       status: 'Stable',
-      createdAt: serverTimestamp(),
+      createdAt: new Date().toISOString(),
     };
+    mockPatients.push(newPatient);
 
-    const docRef = await addDoc(collection(db, "patients"), patientDataForFirestore);
-
-    console.log("Patient added with ID: ", docRef.id);
+    console.log("Patient added to mock array with ID: ", newPatientId);
     console.log("Generated password for new patient:", randomPassword);
     console.log(`Simulating email to ${validatedValues.email} with password: ${randomPassword}`);
-    console.log(`Admin_Notification: New patient ${validatedValues.fullName} (${validatedValues.email}) added with ID ${docRef.id}.`);
+    console.log(`Admin_Notification: New patient ${validatedValues.fullName} (${validatedValues.email}) added with ID ${newPatientId}.`);
 
-    return { success: true, message: `Patient ${validatedValues.fullName} added successfully.`, patientId: docRef.id };
+    return { success: true, message: `Patient ${validatedValues.fullName} added successfully (mock).`, patientId: newPatientId };
   } catch (error) {
-    console.error("Error adding patient: ", error);
+    console.error("Error adding patient (mock): ", error);
     if (error instanceof z.ZodError) {
       return { success: false, message: `Validation failed: ${error.errors.map(e => e.message).join(', ')}` };
     }
-    return { success: false, message: "Failed to add patient. Please check server logs." };
+    return { success: false, message: "Failed to add patient (mock). Please check server logs." };
   }
 }
 
@@ -190,8 +196,19 @@ export type NurseListItem = {
   avatar: string;
   status: 'Available' | 'On Duty' | 'Unavailable' | string;
   hint?: string;
-  createdAt?: Timestamp;
+  // createdAt?: Timestamp; // Replaced with string for mock
+  createdAt?: string;
 };
+
+// Mock data for nurses
+let mockNurses: NurseListItem[] = [
+  { id: 'nur1', name: 'Nurse Alex Ray', specialty: 'Geriatrics', location: 'Springfield General Hospital', phone: '(555) 010-0101', email: 'alex.ray@example.com', avatar: 'https://placehold.co/100x100.png?text=AR', status: 'Available', hint: 'nurse medical', createdAt: new Date().toISOString() },
+  { id: 'nur2', name: 'Nurse Betty Boo', specialty: 'Pediatrics', location: 'Community Health Clinic', phone: '(555) 010-0202', email: 'betty.boo@example.com', avatar: 'https://placehold.co/100x100.png?text=BB', status: 'On Duty', hint: 'nurse medical', createdAt: new Date().toISOString() },
+  { id: 'nur3', name: 'Nurse Charles Xavier', specialty: 'Cardiology', location: 'City Heart Institute', phone: '(555) 010-0303', email: 'charles.xavier@example.com', avatar: 'https://placehold.co/100x100.png?text=CX', status: 'Available', hint: 'nurse medical', createdAt: new Date().toISOString() },
+  { id: 'nur4', name: 'Nurse Diana Prince', specialty: 'Oncology', location: 'Hope Cancer Center', phone: '(555) 010-0404', email: 'diana.prince@example.com', avatar: 'https://placehold.co/100x100.png?text=DP', status: 'Unavailable', hint: 'nurse medical', createdAt: new Date().toISOString() },
+  { id: 'nur5', name: 'Nurse Nightingale', specialty: 'General Practice', location: 'SanHome HQ', phone: '(555) 010-0505', email: 'nightingale@example.com', avatar: 'https://placehold.co/100x100.png?text=NN', status: 'Available', hint: 'nurse medical', createdAt: new Date().toISOString() },
+];
+
 
 const AddNurseInputSchema = z.object({
   fullName: z.string().min(2, { message: "Full name must be at least 2 characters." }),
@@ -204,38 +221,32 @@ const AddNurseInputSchema = z.object({
 export type AddNurseFormValues = z.infer<typeof AddNurseInputSchema>;
 
 export async function fetchNurses(): Promise<{ data?: NurseListItem[], error?: string }> {
-  try {
-    const nursesCollection = collection(db, "nurses");
-    const querySnapshot = await getDocs(nursesCollection);
-    const nursesData = querySnapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      ...doc.data() 
-    })) as NurseListItem[];
-    return { data: nursesData };
-  } catch (e) {
-    console.error("Error fetching nurses from Firestore:", e);
-    return { error: "Failed to fetch nurses." };
-  }
+  console.log("actions.ts: fetchNurses (mock)");
+  await new Promise(resolve => setTimeout(resolve, 200));
+  return { data: [...mockNurses] };
 }
 
 export async function addNurse(
   values: AddNurseFormValues
 ): Promise<{ success?: boolean; message: string; nurseId?: string }> {
+  console.log("actions.ts: addNurse (mock)", values);
+  await new Promise(resolve => setTimeout(resolve, 500));
    try {
     const validatedValues = AddNurseInputSchema.parse(values);
     let avatarUrlToStore = `https://placehold.co/100x100.png?text=${validatedValues.fullName.split(" ").map(n=>n[0]).join("")}`;
     let hint = 'nurse medical';
 
     if (validatedValues.avatarFile) {
-      const storageRef = ref(storage, `nurse-avatars/${Date.now()}_${validatedValues.avatarFile.name}`);
-      await uploadBytes(storageRef, validatedValues.avatarFile);
-      avatarUrlToStore = await getDownloadURL(storageRef);
+      console.log("Simulating upload for nurse avatar:", validatedValues.avatarFile.name);
+      avatarUrlToStore = `https://placehold.co/100x100.png?text=${validatedValues.fullName.split(" ").map(n=>n[0]).join("")}`;
       hint = `nurse ${validatedValues.fullName}`;
     }
     
     const randomPassword = generateRandomPassword();
+    const newNurseId = `nur${Date.now()}`;
 
-    const nurseDataForFirestore = {
+    const newNurse: NurseListItem = {
+      id: newNurseId,
       name: validatedValues.fullName,
       email: validatedValues.email,
       specialty: validatedValues.specialty,
@@ -244,29 +255,28 @@ export async function addNurse(
       avatar: avatarUrlToStore,
       hint: hint,
       status: 'Available', 
-      createdAt: serverTimestamp(),
+      createdAt: new Date().toISOString(),
     };
+    mockNurses.push(newNurse);
 
-    const docRef = await addDoc(collection(db, "nurses"), nurseDataForFirestore);
-
-    console.log("Nurse added with ID: ", docRef.id);
+    console.log("Nurse added to mock array with ID: ", newNurseId);
     console.log("Generated password for new nurse:", randomPassword);
     console.log(`Simulating email to ${validatedValues.email} with password: ${randomPassword}`);
-    console.log(`Admin_Notification: New nurse ${validatedValues.fullName} (${validatedValues.email}) added with ID ${docRef.id}.`);
+    console.log(`Admin_Notification: New nurse ${validatedValues.fullName} (${validatedValues.email}) added with ID ${newNurseId}.`);
     
-    return { success: true, message: `Nurse ${validatedValues.fullName} added successfully.`, nurseId: docRef.id };
+    return { success: true, message: `Nurse ${validatedValues.fullName} added successfully (mock).`, nurseId: newNurseId };
   } catch (error) {
-    console.error("Error adding nurse: ", error);
+    console.error("Error adding nurse (mock): ", error);
      if (error instanceof z.ZodError) {
       return { success: false, message: `Validation failed: ${error.errors.map(e => e.message).join(', ')}` };
     }
-    return { success: false, message: "Failed to add nurse. Please check server logs." };
+    return { success: false, message: "Failed to add nurse (mock). Please check server logs." };
   }
 }
 
 
 // --- Dashboard Stats ---
-const mockDashboardStats = {
+const initialDashboardStats = {
   activePatients: 0, 
   activePatientsChange: "+0 since last week",
   upcomingAppointments: 0, 
@@ -277,34 +287,38 @@ const mockDashboardStats = {
   careQualityScoreTrend: "Data unavailable",
 };
 
-export type DashboardStats = typeof mockDashboardStats;
+export type DashboardStats = typeof initialDashboardStats;
 
 export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, error?: string}> {
+  console.log("actions.ts: fetchDashboardStats (mock)");
   await new Promise(resolve => setTimeout(resolve, 300)); 
   try {
-    const patientsResult = await fetchPatients();
-    const nursesResult = await fetchNurses();
-
-    const stats = { ...mockDashboardStats };
-
-    if (patientsResult.data) {
-      stats.activePatients = patientsResult.data.length;
-    }
-    if (nursesResult.data) {
-      stats.availableNurses = nursesResult.data.filter(n => n.status === 'Available').length;
-    }
-    // Fetching upcomingAppointments would require querying an 'appointments' or 'videoConsults' collection
-    // For now, we'll keep it at 0 or use a mock value.
-    // Example: const videoConsults = await getDocs(collection(db, "videoConsults")); stats.upcomingAppointments = videoConsults.docs.length;
-
+    const stats = { ...initialDashboardStats };
+    stats.activePatients = mockPatients.length;
+    stats.availableNurses = mockNurses.filter(n => n.status === 'Available').length;
+    // upcomingAppointments would require a mockVideoConsults array or similar
     return { data: stats };
   } catch (error) {
-    console.error("Error fetching dashboard stats:", error);
-    return { error: "Could not load dashboard statistics.", data: mockDashboardStats };
+    console.error("Error fetching dashboard stats (mock):", error);
+    return { error: "Could not load dashboard statistics (mock).", data: initialDashboardStats };
   }
 }
 
 // --- Video Consultation Scheduling ---
+type VideoConsult = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  nurseId: string;
+  nurseName: string;
+  consultationTime: string; // Store as ISO string
+  dailyRoomUrl: string;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  createdAt: string; // Store as ISO string
+};
+
+let mockVideoConsults: VideoConsult[] = [];
+
 const ScheduleVideoConsultInputSchema = z.object({
   patientId: z.string().min(1),
   nurseId: z.string().min(1),
@@ -315,63 +329,57 @@ export type ScheduleVideoConsultFormServerValues = z.infer<typeof ScheduleVideoC
 export async function scheduleVideoConsult(
   values: ScheduleVideoConsultFormServerValues
 ): Promise<{ success?: boolean; message: string; consultId?: string; roomUrl?: string }> {
+  console.log("actions.ts: scheduleVideoConsult (mock)", values);
+  await new Promise(resolve => setTimeout(resolve, 500));
   try {
     const validatedValues = ScheduleVideoConsultInputSchema.parse(values);
 
-    // Fetch patient and nurse details to get names and emails
-    const patientSnap = await getDoc(doc(db, "patients", validatedValues.patientId));
-    const nurseSnap = await getDoc(doc(db, "nurses", validatedValues.nurseId));
+    const patient = mockPatients.find(p => p.id === validatedValues.patientId);
+    const nurse = mockNurses.find(n => n.id === validatedValues.nurseId);
 
-    if (!patientSnap.exists()) return { success: false, message: "Selected patient not found." };
-    if (!nurseSnap.exists()) return { success: false, message: "Selected nurse not found." };
+    if (!patient) return { success: false, message: "Selected patient not found (mock)." };
+    if (!nurse) return { success: false, message: "Selected nurse not found (mock)." };
 
-    const patientData = patientSnap.data() as PatientListItem;
-    const nurseData = nurseSnap.data() as NurseListItem;
-
-    // Simulate Daily.co room URL generation
-    // IMPORTANT: Replace 'YOUR_DAILY_CO_DOMAIN.daily.co' with your actual Daily.co domain
-    // or use an environment variable.
-    const dailyCoBaseUrl = process.env.NEXT_PUBLIC_DAILY_CO_BASE_URL || "https://YOUR_DAILY_CO_DOMAIN.daily.co/";
+    const dailyCoBaseUrl = process.env.NEXT_PUBLIC_DAILY_CO_BASE_URL || "https://YOUR_DOMAIN.daily.co/"; // User needs to set this in .env
     const roomName = `sanhome-consult-${generateRandomString(8)}`;
     const dailyRoomUrl = `${dailyCoBaseUrl}${roomName}`;
+    const newConsultId = `vc${Date.now()}`;
 
-    const videoConsultData = {
+    const newVideoConsult: VideoConsult = {
+      id: newConsultId,
       patientId: validatedValues.patientId,
-      patientName: patientData.name,
+      patientName: patient.name,
       nurseId: validatedValues.nurseId,
-      nurseName: nurseData.name,
-      consultationTime: Timestamp.fromDate(validatedValues.consultationDateTime),
+      nurseName: nurse.name,
+      consultationTime: validatedValues.consultationDateTime.toISOString(),
       dailyRoomUrl: dailyRoomUrl,
       status: 'scheduled',
-      createdAt: serverTimestamp(),
+      createdAt: new Date().toISOString(),
     };
+    mockVideoConsults.push(newVideoConsult);
 
-    const docRef = await addDoc(collection(db, "videoConsults"), videoConsultData);
-
-    // Simulate sending email notifications
-    console.log(`Simulating email to Patient ${patientData.name} (${patientData.email}): 
+    console.log(`Simulating email to Patient ${patient.name} (${patient.email}): 
       Video consult scheduled for ${validatedValues.consultationDateTime.toLocaleString()}
       Join Link: ${dailyRoomUrl}`);
     
-    console.log(`Simulating email to Nurse ${nurseData.name} (${nurseData.email}): 
-      Video consult scheduled with ${patientData.name} for ${validatedValues.consultationDateTime.toLocaleString()}
+    console.log(`Simulating email to Nurse ${nurse.name} (${nurse.email}): 
+      Video consult scheduled with ${patient.name} for ${validatedValues.consultationDateTime.toLocaleString()}
       Join Link: ${dailyRoomUrl}`);
       
-    console.log(`Admin_Notification: Video consult scheduled between ${patientData.name} and ${nurseData.name} for ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}`);
+    console.log(`Admin_Notification: Video consult scheduled (mock) between ${patient.name} and ${nurse.name} for ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}. ID: ${newConsultId}`);
 
     return { 
       success: true, 
-      message: `Video consult scheduled successfully for ${patientData.name} with ${nurseData.name}. Link: ${dailyRoomUrl}`, 
-      consultId: docRef.id,
+      message: `Video consult scheduled successfully (mock) for ${patient.name} with ${nurse.name}. Link: ${dailyRoomUrl}`, 
+      consultId: newConsultId,
       roomUrl: dailyRoomUrl 
     };
 
   } catch (error) {
-    console.error("Error scheduling video consult: ", error);
+    console.error("Error scheduling video consult (mock): ", error);
     if (error instanceof z.ZodError) {
       return { success: false, message: `Validation failed: ${error.errors.map(e => e.message).join(', ')}` };
     }
-    return { success: false, message: "Failed to schedule video consult. Please check server logs." };
+    return { success: false, message: "Failed to schedule video consult (mock). Please check server logs." };
   }
 }
-

@@ -1,21 +1,28 @@
 
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { MapPin, Phone, UserPlus, Mail, Briefcase } from "lucide-react";
+import { MapPin, Phone, UserPlus, Mail, Briefcase, AlertCircle } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { fetchNurses, type NurseListItem } from '@/app/actions';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
-const mockNurses = [
-  { id: 'n1', name: 'Nurse Alex Ray', specialty: 'Geriatrics', location: 'Springfield General Hospital', phone: '(555) 010-0101', avatar: 'https://placehold.co/100x100.png', email: 'alex.ray@example.com', status: 'Available', hint: 'nurse medical' },
-  { id: 'n2', name: 'Nurse Betty Boo', specialty: 'Pediatrics', location: 'Community Health Clinic', phone: '(555) 010-0202', avatar: 'https://placehold.co/100x100.png', email: 'betty.boo@example.com', status: 'On Duty', hint: 'nurse medical' },
-  { id: 'n3', name: 'Nurse Charles Xavier', specialty: 'Cardiology', location: 'City Heart Institute', phone: '(555) 010-0303', avatar: 'https://placehold.co/100x100.png', email: 'charles.xavier@example.com', status: 'Available', hint: 'nurse medical' },
-  { id: 'n4', name: 'Nurse Diana Prince', specialty: 'Oncology', location: 'Hope Cancer Center', phone: '(555) 010-0404', avatar: 'https://placehold.co/100x100.png', email: 'diana.prince@example.com', status: 'Unavailable', hint: 'nurse medical' },
-  { id: 'n5', name: 'Nurse Eddie Brock', specialty: 'Psychiatry', location: 'Mental Wellness Center', phone: '(555) 010-0505', avatar: 'https://placehold.co/100x100.png', email: 'eddie.brock@example.com', status: 'On Duty', hint: 'nurse medical' },
-];
+export default async function NursesPage() {
+  const { data: nurses, error } = await fetchNurses();
 
-export default function NursesPage() {
+  if (error) {
+    return (
+      <div className="container mx-auto p-4">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error Loading Nurses</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+  
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -35,7 +42,7 @@ export default function NursesPage() {
           <CardDescription>Browse and manage nurse profiles. Geolocation tracking would appear on the map below.</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {mockNurses.map(nurse => (
+          {nurses && nurses.length > 0 ? nurses.map(nurse => (
             <Card key={nurse.id} className="flex flex-col hover:shadow-xl transition-shadow duration-300 rounded-lg overflow-hidden">
               <CardHeader className="flex flex-row items-center gap-4 pb-3 bg-card p-4">
                 <Image src={nurse.avatar} alt={nurse.name} width={72} height={72} className="rounded-full border-2 border-primary/50" data-ai-hint={nurse.hint} />
@@ -72,7 +79,11 @@ export default function NursesPage() {
                   </Button>
               </CardFooter>
             </Card>
-          ))}
+          )) : (
+             <div className="md:col-span-2 lg:col-span-3 xl:col-span-4 text-center py-10">
+              <p className="text-muted-foreground">No nurses found. Get started by adding a new nurse.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
       <Card className="shadow-lg">

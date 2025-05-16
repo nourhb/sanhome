@@ -44,7 +44,7 @@ export type PatientListItem = {
   name: string;
   age: number;
   avatarUrl: string;
-  joinDate: string;
+  joinDate: string; // Should be ISO string date 'YYYY-MM-DD'
   primaryNurse: string;
   phone: string;
   email: string;
@@ -52,7 +52,7 @@ export type PatientListItem = {
   mobilityStatus: string;
   pathologies: string[];
   allergies: string[];
-  lastVisit: string;
+  lastVisit: string; // Should be ISO string date 'YYYY-MM-DD'
   condition: string;
   status: string;
   hint?: string;
@@ -62,14 +62,14 @@ export type PatientListItem = {
 };
 
 export async function fetchPatients(): Promise<{ data?: PatientListItem[], error?: string }> {
-  console.log("[ACTION_LOG] fetchPatients: Initiated.");
+  console.log("[ACTION_LOG] fetchPatients: Initiated from Firestore.");
   try {
     const patientsCollectionRef = collection(db, "patients");
     const q = query(patientsCollectionRef, orderBy("createdAt", "desc"));
-    console.log("[ACTION_LOG] fetchPatients: Created collection reference. Attempting getDocs...");
+    console.log("[ACTION_LOG] fetchPatients: Created query. Attempting getDocs...");
 
     const patientsSnapshot = await getDocs(q);
-    console.log(`[ACTION_LOG] fetchPatients: getDocs successful. Found ${patientsSnapshot.docs.length} documents.`);
+    console.log(`[ACTION_LOG] fetchPatients: Firestore getDocs successful. Found ${patientsSnapshot.docs.length} documents.`);
 
     const patientsList = patientsSnapshot.docs.map(docSnap => {
       const data = docSnap.data();
@@ -93,7 +93,7 @@ export async function fetchPatients(): Promise<{ data?: PatientListItem[], error
         createdAt: data.createdAt,
       } as PatientListItem;
     });
-    console.log("[ACTION_LOG] fetchPatients: Data mapping complete. Returning data.");
+    console.log("[ACTION_LOG] fetchPatients: Firestore data mapping complete. Returning data.");
     return { data: patientsList };
   } catch (error: any) {
     console.error("[ACTION_ERROR] fetchPatients: Error fetching patients from Firestore:", error.code, error.message, error);
@@ -151,8 +151,8 @@ const AddPatientInputSchema = z.object({
   email: z.string().email(),
   address: z.string().min(5),
   mobilityStatus: z.string().min(3),
-  pathologies: z.string().min(3),
-  allergies: z.string().optional(),
+  pathologies: z.string().min(3), // Comma-separated string
+  allergies: z.string().optional(), // Comma-separated string
 });
 export type AddPatientFormValues = z.infer<typeof AddPatientInputSchema>  & { avatarUrl?: string };
 
@@ -191,9 +191,9 @@ export async function addPatient(
       mobilityStatus: validatedValues.mobilityStatus,
       pathologies: validatedValues.pathologies.split(',').map(p => p.trim()).filter(p => p.length > 0),
       allergies: validatedValues.allergies ? validatedValues.allergies.split(',').map(a => a.trim()).filter(a => a.length > 0) : [],
-      lastVisit: Timestamp.fromDate(new Date()),
-      condition: validatedValues.pathologies.split(',')[0]?.trim() || 'N/A',
-      status: 'Stable',
+      lastVisit: Timestamp.fromDate(new Date()), // Default to now
+      condition: validatedValues.pathologies.split(',')[0]?.trim() || 'N/A', // Default condition
+      status: 'Stable', // Default status
       createdAt: serverTimestamp(),
     };
 
@@ -230,13 +230,13 @@ export type NurseListItem = {
 };
 
 export async function fetchNurses(): Promise<{ data?: NurseListItem[], error?: string }> {
-  console.log("[ACTION_LOG] fetchNurses: Initiated.");
+  console.log("[ACTION_LOG] fetchNurses: Initiated from Firestore.");
   try {
     const nursesCollectionRef = collection(db, "nurses");
     const q = query(nursesCollectionRef, orderBy("createdAt", "desc"));
     console.log("[ACTION_LOG] fetchNurses: Created query. Attempting getDocs...");
     const nursesSnapshot = await getDocs(q);
-    console.log(`[ACTION_LOG] fetchNurses: getDocs successful. Found ${nursesSnapshot.docs.length} documents.`);
+    console.log(`[ACTION_LOG] fetchNurses: Firestore getDocs successful. Found ${nursesSnapshot.docs.length} documents.`);
 
     const nursesList = nursesSnapshot.docs.map(docSnap => {
       const data = docSnap.data();
@@ -253,7 +253,7 @@ export async function fetchNurses(): Promise<{ data?: NurseListItem[], error?: s
         createdAt: data.createdAt,
       } as NurseListItem;
     });
-    console.log("[ACTION_LOG] fetchNurses: Data mapping complete. Returning data.");
+    console.log("[ACTION_LOG] fetchNurses: Firestore data mapping complete. Returning data.");
     return { data: nursesList };
   } catch (error: any) {
     console.error("[ACTION_ERROR] fetchNurses: Error fetching nurses from Firestore:", error.code, error.message, error);
@@ -301,7 +301,7 @@ export async function addNurse(
       phone: validatedValues.phone,
       avatar: avatarUrlToStore,
       hint: hint,
-      status: 'Available' as const,
+      status: 'Available' as const, // Default status
       createdAt: serverTimestamp(),
     };
 
@@ -356,13 +356,14 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
       videoConsultsSnapshot
     ] = await Promise.all([
       getCountFromServer(patientsCollectionRef),
-      getDocs(query(nursesCollectionRef)),
-      getDocs(query(videoConsultsCollectionRef))
+      getDocs(query(nursesCollectionRef)), // Fetches all nurse docs to count available
+      getDocs(query(videoConsultsCollectionRef)) // Fetches all consults for aggregation
     ]);
     console.log("[ACTION_LOG] fetchDashboardStats: Counts received.");
 
     const activePatients = patientCountSnapshot.data().count;
 
+    // Correctly count available nurses from the fetched documents
     const availableNurses = nursesSnapshot.docs.filter(doc => doc.data().status === 'Available').length;
 
     const todayStart = new Date();
@@ -376,7 +377,7 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
 
     videoConsultsSnapshot.docs.forEach(doc => {
       const consultData = doc.data();
-      const consultTime = consultData.consultationTime as Timestamp;
+      const consultTime = consultData.consultationTime as Timestamp; // Assume it's a Firestore Timestamp
 
       if (consultData.status === 'scheduled' && consultTime.toDate() >= todayStart) {
         upcomingAppointments++;
@@ -385,6 +386,7 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
         }
       }
 
+      // Ensure status is a known key or initialize
       const status = consultData.status as string;
       if (statusCounts.hasOwnProperty(status)) {
         statusCounts[status]++;
@@ -393,21 +395,24 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
       }
 
 
-      const nurseName = consultData.nurseName as string;
+      // Aggregate nurse performance by name
+      const nurseName = consultData.nurseName as string; // Assume nurseName field exists
       if (nurseName) {
         nursePerformance[nurseName] = (nursePerformance[nurseName] || 0) + 1;
       }
     });
     console.log("[ACTION_LOG] fetchDashboardStats: Consults processed.");
 
+    // Mock data for some fields, as deriving them accurately might be complex
     const activePatientsChange = activePatients > 0 ? `+${Math.floor(Math.random()*5 + 1)} since last week` : "N/A";
     const availableNursesOnline = availableNurses > 0 ? `Online: ${Math.floor(Math.random()*availableNurses + 1)}` : "Online: 0";
-    const careQualityScore = `${Math.floor(Math.random() * 10 + 88)}%`;
+    const careQualityScore = `${Math.floor(Math.random() * 10 + 88)}%`; // e.g., 88-97%
     const careQualityScoreTrend = `Up by ${Math.floor(Math.random()*3+1)}% from last month`;
 
     console.log("[ACTION_LOG] fetchDashboardStats: Processing patient registrations data.");
+    // For patientRegistrationsData, we need to fetch actual patient records
     const patientsSnapshotForChart = await getDocs(query(patientsCollectionRef, orderBy("createdAt", "asc")));
-    const monthlyRegistrations: { [key: string]: number } = {};
+    const monthlyRegistrations: { [key: string]: number } = {}; // Key: "YYYY-MM"
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
     patientsSnapshotForChart.docs.forEach(docSnap => {
@@ -432,12 +437,14 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
     }
     console.log("[ACTION_LOG] fetchDashboardStats: Patient registrations processed.");
 
+    // Appointment Status Data from aggregated statusCounts
     const appointmentStatusData: AppointmentStatusDataPoint[] = [
       { status: "Completed", count: statusCounts.completed || 0, fill: "var(--color-completed)" },
       { status: "Scheduled", count: statusCounts.scheduled || 0, fill: "var(--color-scheduled)" },
       { status: "Cancelled", count: statusCounts.cancelled || 0, fill: "var(--color-cancelled)" },
     ];
 
+    // Nurse Performance Data
     const nurseColors = ["hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))", "hsl(var(--chart-1))", "hsl(var(--chart-2))"];
     const nursePerformanceData: NursePerformanceDataPoint[] = Object.entries(nursePerformance)
       .map(([name, count], index) => ({
@@ -445,8 +452,8 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
         consults: count,
         fill: nurseColors[index % nurseColors.length]
       }))
-      .sort((a, b) => b.consults - a.consults)
-      .slice(0, 5);
+      .sort((a, b) => b.consults - a.consults) // Sort by most consults
+      .slice(0, 5); // Top 5
     console.log("[ACTION_LOG] fetchDashboardStats: Nurse performance processed.");
 
     const stats: DashboardStats = {
@@ -466,9 +473,10 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
     return { data: stats };
   } catch (error: any) {
     console.error("[ACTION_ERROR] fetchDashboardStats: Error fetching dashboard stats from Firestore:", error.code, error.message, error);
+    // Return default/empty stats on error to prevent breaking the dashboard UI
     return {
       error: `Could not load dashboard statistics: ${error.message}`,
-      data: {
+      data: { // Provide default empty structure
         activePatients: 0, activePatientsChange: "N/A",
         upcomingAppointments: 0, upcomingAppointmentsToday: "N/A",
         availableNurses: 0, availableNursesOnline: "N/A",
@@ -489,10 +497,10 @@ export type VideoConsultListItem = {
   patientName: string;
   nurseId: string;
   nurseName: string;
-  consultationTime: string;
+  consultationTime: string; // ISO Date String
   dailyRoomUrl: string;
   status: 'scheduled' | 'completed' | 'cancelled';
-  createdAt: string;
+  createdAt: string; // ISO Date String
 };
 
 const ScheduleVideoConsultInputSchema = z.object({
@@ -500,6 +508,7 @@ const ScheduleVideoConsultInputSchema = z.object({
   nurseId: z.string().min(1),
   consultationDateTime: z.date(),
 });
+// This type is for server-side use if needed, client-side uses the one above.
 export type ScheduleVideoConsultFormServerValues = z.infer<typeof ScheduleVideoConsultInputSchema>;
 
 export async function scheduleVideoConsult(
@@ -509,6 +518,7 @@ export async function scheduleVideoConsult(
   try {
     const validatedValues = ScheduleVideoConsultInputSchema.parse(values);
 
+    // Fetch patient and nurse details from Firestore to get their names
     const patientDocRef = doc(db, "patients", validatedValues.patientId);
     const nurseDocRef = doc(db, "nurses", validatedValues.nurseId);
 
@@ -528,28 +538,33 @@ export async function scheduleVideoConsult(
     }
     console.log("[ACTION_LOG] scheduleVideoConsult: Patient and nurse documents fetched.");
 
-    const patient = patientDocSnap.data() as Omit<PatientListItem, 'id'>;
-    const nurse = nurseDocSnap.data() as Omit<NurseListItem, 'id'>;
+    const patient = patientDocSnap.data() as Omit<PatientListItem, 'id'>; // Assuming structure
+    const nurse = nurseDocSnap.data() as Omit<NurseListItem, 'id'>; // Assuming structure
 
+    // Generate Daily.co room URL
+    // Use environment variable for base URL, fallback to a placeholder
     const dailyCoBaseUrl = process.env.NEXT_PUBLIC_DAILY_CO_BASE_URL;
     if (!dailyCoBaseUrl || dailyCoBaseUrl.includes("YOUR_DAILY_CO_DOMAIN.daily.co") || dailyCoBaseUrl === "https://example.daily.co/") {
         console.warn("[ACTION_WARN] scheduleVideoConsult: NEXT_PUBLIC_DAILY_CO_BASE_URL is not set correctly. Using fallback.");
+        // It's better to throw an error or return failure if not configured
+        // return { success: false, message: "Daily.co base URL is not configured. Please set NEXT_PUBLIC_DAILY_CO_BASE_URL in .env" };
     }
     const roomName = `sanhome-consult-${generateRandomString(8)}`;
+    // Ensure base URL ends with a slash if it doesn't already
     const effectiveDailyCoBaseUrl = dailyCoBaseUrl && !dailyCoBaseUrl.includes("YOUR_DAILY_CO_DOMAIN.daily.co") && dailyCoBaseUrl !== "https://example.daily.co/"
                                      ? dailyCoBaseUrl
-                                     : "https://sanhome.daily.co/";
+                                     : "https://sanhome.daily.co/"; // Default fallback
     const dailyRoomUrl = `${effectiveDailyCoBaseUrl.endsWith('/') ? effectiveDailyCoBaseUrl : effectiveDailyCoBaseUrl + '/'}${roomName}`;
     console.log("[ACTION_LOG] scheduleVideoConsult: Generated Daily room URL:", dailyRoomUrl);
 
     const newVideoConsultData = {
       patientId: validatedValues.patientId,
-      patientName: patient.name,
+      patientName: patient.name, // Get from fetched patient doc
       nurseId: validatedValues.nurseId,
-      nurseName: nurse.name,
+      nurseName: nurse.name, // Get from fetched nurse doc
       consultationTime: Timestamp.fromDate(validatedValues.consultationDateTime),
       dailyRoomUrl: dailyRoomUrl,
-      status: 'scheduled' as const,
+      status: 'scheduled' as const, // Default status
       createdAt: serverTimestamp(),
     };
 
@@ -557,8 +572,9 @@ export async function scheduleVideoConsult(
     const docRef = await addDoc(collection(db, "videoConsults"), newVideoConsultData);
     console.log("[ACTION_LOG] scheduleVideoConsult: Video consult added to Firestore with ID:", docRef.id);
 
-    console.log(`[ACTION_LOG] scheduleVideoConsult: Simulating email to Patient ${patient.name}: Video consult at ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}`);
-    console.log(`[ACTION_LOG] scheduleVideoConsult: Simulating email to Nurse ${nurse.name}: Video consult with ${patient.name} at ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}`);
+    // Simulate notifications
+    console.log(`[ACTION_LOG] scheduleVideoConsult: Simulating email to Patient ${patient.name} (email: ${patient.email}): Video consult at ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}`);
+    console.log(`[ACTION_LOG] scheduleVideoConsult: Simulating email to Nurse ${nurse.name} (email: ${nurse.email}): Video consult with ${patient.name} at ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}`);
 
     return {
       success: true,
@@ -580,10 +596,10 @@ export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListIte
   console.log("[ACTION_LOG] fetchVideoConsults: Initiated.");
   try {
     const consultsCollectionRef = collection(db, "videoConsults");
-    const q = query(consultsCollectionRef, orderBy("consultationTime", "desc"));
+    const q = query(consultsCollectionRef, orderBy("consultationTime", "desc")); // Order by consultation time
     console.log("[ACTION_LOG] fetchVideoConsults: Created query. Attempting getDocs...");
     const consultsSnapshot = await getDocs(q);
-    console.log(`[ACTION_LOG] fetchVideoConsults: getDocs successful. Found ${consultsSnapshot.docs.length} documents.`);
+    console.log(`[ACTION_LOG] fetchVideoConsults: Firestore getDocs successful. Found ${consultsSnapshot.docs.length} documents.`);
 
     const consultsList = consultsSnapshot.docs.map(docSnap => {
       const data = docSnap.data();
@@ -599,7 +615,7 @@ export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListIte
         createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
       } as VideoConsultListItem;
     });
-    console.log("[ACTION_LOG] fetchVideoConsults: Data mapping complete. Returning data.");
+    console.log("[ACTION_LOG] fetchVideoConsults: Firestore data mapping complete. Returning data.");
     return { data: consultsList };
   } catch (error: any) {
     console.error("[ACTION_ERROR] fetchVideoConsults: Error fetching video consults from Firestore:", error.code, error.message, error);
@@ -610,7 +626,7 @@ export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListIte
 // --- Database Seeding ---
 const mockTunisianPatients = [
   {
-    name: "Ahmed Ben Salah", age: 68, primaryNurse: "Leila Haddad",
+    name: "Ahmed Ben Salah", age: 68, primaryNurse: "Leila Haddad", // Will be dynamically assigned
     phone: "+216 22 123 456", email: "ahmed.bensalah@example.com", address: "15 Rue de la Kasbah, Tunis",
     mobilityStatus: "Ambulatoire avec canne", pathologies: ["Diabète", "Hypertension"], allergies: ["Pénicilline"],
     lastVisitDate: "2024-07-15", condition: "Diabète de type 2", status: "Stable", hint: "elderly man tunisian"
@@ -619,13 +635,13 @@ const mockTunisianPatients = [
     name: "Fatima Bouaziz", age: 75, primaryNurse: "Karim Zayani",
     phone: "+216 98 765 432", email: "fatima.bouaziz@example.com", address: "Avenue Habib Bourguiba, Sousse",
     mobilityStatus: "Fauteuil roulant", pathologies: ["Arthrose", "Problèmes cardiaques"], allergies: ["Aspirine"],
-    lastVisitDate: "2024-07-20", condition: "Arthrose sévère", status: "Nécessite suivi", hint: "elderly woman tunisian"
+    lastVisitDate: "2024-07-20", condition: "Arthrose sévère", status: "Needs Follow-up", hint: "elderly woman tunisian"
   },
   {
     name: "Mohamed Cherif", age: 55, primaryNurse: "Rania Chebbi",
     phone: "+216 55 555 555", email: "mohamed.cherif@example.com", address: "Cité El Ghazela, Ariana",
     mobilityStatus: "Ambulatoire", pathologies: ["Asthme"], allergies: [],
-    lastVisitDate: "2024-07-01", condition: "Asthme chronique", status: "En amélioration", hint: "man tunisian"
+    lastVisitDate: "2024-07-01", condition: "Asthme chronique", status: "Improving", hint: "man tunisian"
   },
   {
     name: "Aisha Khelifi", age: 62, primaryNurse: "Hassen Marzouk",
@@ -637,7 +653,7 @@ const mockTunisianPatients = [
     name: "Youssef Trabelsi", age: 70, primaryNurse: "Sami Ben Ammar",
     phone: "+216 99 888 777", email: "youssef.trabelsi@example.com", address: "La Marsa, Tunis",
     mobilityStatus: "Alité", pathologies: ["Problèmes cardiaques", "Diabète"], allergies: [],
-    lastVisitDate: "2024-07-22", condition: "Insuffisance cardiaque", status: "Nécessite suivi", hint: "elderly man tunisian"
+    lastVisitDate: "2024-07-22", condition: "Insuffisance cardiaque", status: "Needs Follow-up", hint: "elderly man tunisian"
   }
 ];
 
@@ -667,8 +683,8 @@ const mockTunisianNurses = [
 export async function seedDatabase(): Promise<{ success: boolean; message: string; details?: Record<string, string> }> {
   console.log("[ACTION_LOG] seedDatabase: Initiated.");
   const results: Record<string, string> = {};
-  const patientRefs: { id: string; name: string }[] = [];
-  const nurseRefs: { id: string; name: string }[] = [];
+  const patientRefs: { id: string; name: string, email: string }[] = [];
+  const nurseRefs: { id: string; name: string, email: string }[] = [];
 
   try {
     // Seed Patients
@@ -676,24 +692,27 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     const currentPatientsSnapshot = await getDocs(query(patientsCollectionRef, limit(1)));
     if (currentPatientsSnapshot.empty) {
       for (const patientData of mockTunisianPatients) {
-        const { lastVisitDate, ...restData } = patientData; // Separate lastVisitDate
+        const { lastVisitDate, primaryNurse, ...restData } = patientData;
         const newPatient = {
           ...restData,
+          primaryNurse: "To be assigned", // Placeholder, will be updated if nurses are seeded
           avatarUrl: `https://placehold.co/100x100.png?text=${patientData.name.split(" ").map(n=>n[0]).join("")}`,
-          joinDate: Timestamp.fromDate(new Date(Date.now() - Math.floor(Math.random() * 365 * 24 * 60 * 60 * 1000))), // Random join date in the last year
+          joinDate: Timestamp.fromDate(new Date(Date.now() - Math.floor(Math.random() * 365 * 24 * 60 * 60 * 1000))),
           lastVisit: Timestamp.fromDate(new Date(lastVisitDate)),
           createdAt: serverTimestamp(),
         };
         const docRef = await addDoc(patientsCollectionRef, newPatient);
-        patientRefs.push({ id: docRef.id, name: newPatient.name });
+        patientRefs.push({ id: docRef.id, name: newPatient.name, email: newPatient.email });
         console.log(`[ACTION_LOG] Seeded patient: ${newPatient.name} with ID ${docRef.id}`);
       }
       results.patients = `Seeded ${mockTunisianPatients.length} patients.`;
     } else {
       results.patients = "Patients collection is not empty. Skipping seeding patients.";
-      // Fetch existing patients if we need them for consults and didn't seed
       const existingPatients = await getDocs(patientsCollectionRef);
-      existingPatients.forEach(doc => patientRefs.push({ id: doc.id, name: doc.data().name }));
+      existingPatients.forEach(doc => {
+        const data = doc.data();
+        patientRefs.push({ id: doc.id, name: data.name, email: data.email });
+      });
     }
 
     // Seed Nurses
@@ -707,16 +726,31 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
           createdAt: serverTimestamp(),
         };
         const docRef = await addDoc(nursesCollectionRef, newNurse);
-        nurseRefs.push({ id: docRef.id, name: newNurse.name });
+        nurseRefs.push({ id: docRef.id, name: newNurse.name, email: newNurse.email });
         console.log(`[ACTION_LOG] Seeded nurse: ${newNurse.name} with ID ${docRef.id}`);
       }
       results.nurses = `Seeded ${mockTunisianNurses.length} nurses.`;
     } else {
       results.nurses = "Nurses collection is not empty. Skipping seeding nurses.";
-      // Fetch existing nurses
       const existingNurses = await getDocs(nursesCollectionRef);
-      existingNurses.forEach(doc => nurseRefs.push({ id: doc.id, name: doc.data().name }));
+      existingNurses.forEach(doc => {
+        const data = doc.data();
+        nurseRefs.push({ id: doc.id, name: data.name, email: data.email });
+      });
     }
+
+    // Assign primary nurses to patients if both were seeded/exist
+    if (patientRefs.length > 0 && nurseRefs.length > 0) {
+        const batch = writeBatch(db);
+        for (const patientRef of patientRefs) {
+            const randomNurse = nurseRefs[Math.floor(Math.random() * nurseRefs.length)];
+            const patientDocRefToUpdate = doc(db, "patients", patientRef.id);
+            batch.update(patientDocRefToUpdate, { primaryNurse: randomNurse.name });
+        }
+        await batch.commit();
+        console.log("[ACTION_LOG] Assigned primary nurses to patients.");
+    }
+
 
     // Seed Video Consultations (only if we have patients and nurses)
     if (patientRefs.length > 0 && nurseRefs.length > 0) {
@@ -724,9 +758,10 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
       const currentConsultsSnapshot = await getDocs(query(videoConsultsCollectionRef, limit(1)));
       let seededConsultsCount = 0;
       if (currentConsultsSnapshot.empty) {
-        for (let i = 0; i < 5; i++) { // Create 5 mock consults
-          const randomPatient = patientRefs[Math.floor(Math.random() * patientRefs.length)];
-          const randomNurse = nurseRefs[Math.floor(Math.random() * nurseRefs.length)];
+        for (let i = 0; i < Math.min(5, patientRefs.length, nurseRefs.length); i++) {
+          const randomPatient = patientRefs[i % patientRefs.length]; // Cycle through patients
+          const randomNurse = nurseRefs[i % nurseRefs.length];   // Cycle through nurses
+
           const consultDate = new Date();
           consultDate.setDate(consultDate.getDate() + Math.floor(Math.random() * 30) - 15); // +/- 15 days
           consultDate.setHours(Math.floor(Math.random() * 10) + 8, Math.random() > 0.5 ? 30 : 0, 0, 0); // 8 AM to 5:30 PM

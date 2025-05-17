@@ -2,12 +2,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import DailyIframe, { type DailyCall } from '@daily-co/daily-js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Video, LogIn, LogOut, AlertCircle, CalendarPlus, List, RefreshCw, User, BriefcaseMedical, ClockIcon } from "lucide-react";
+import { Video, LogIn, LogOut, AlertCircle, CalendarPlus, List, RefreshCw, User, BriefcaseMedical, ClockIcon, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
@@ -15,14 +14,6 @@ import { fetchVideoConsults, type VideoConsultListItem } from '@/app/actions';
 import { Badge } from '@/components/ui/badge';
 import { format, parseISO } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
-
-const CALL_OPTIONS = {
-  showLeaveButton: true,
-  showFullscreenButton: true,
-  showParticipantsBar: true,
-  showLocalVideo: true,
-  showPipButton: true,
-};
 
 type CallStatus = 'scheduled' | 'completed' | 'cancelled';
 
@@ -49,11 +40,9 @@ const getStatusBadgeClassNames = (status: CallStatus) => {
 
 
 export default function VideoConsultPage() {
-  const [callObject, setCallObject] = useState<DailyCall | null>(null);
-  const [roomUrlToJoin, setRoomUrlToJoin] = useState<string>('');
-  const [callState, setCallState] = useState<'idle' | 'joining' | 'joined' | 'leaving' | 'left' | 'error'>('idle');
+  const [currentRoomUrl, setCurrentRoomUrl] = useState<string | null>(null);
+  const [manualRoomUrl, setManualRoomUrl] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const callFrameRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const [scheduledConsults, setScheduledConsults] = useState<VideoConsultListItem[]>([]);
@@ -82,86 +71,32 @@ export default function VideoConsultPage() {
     loadConsults();
   }, [loadConsults]);
 
-  const handleJoinCall = useCallback(async (urlToJoin?: string) => {
-    const targetRoomUrl = urlToJoin || roomUrlToJoin;
+  const handleJoinCall = useCallback((urlToJoin?: string) => {
+    const targetRoomUrl = urlToJoin || manualRoomUrl;
     if (!targetRoomUrl) {
       toast({ variant: 'destructive', title: 'Error', description: 'Room URL is missing.' });
       return;
     }
-
-    if (!DailyIframe.supportedBrowser().supported) {
-      setErrorMsg("Your browser is not supported for Daily.co video calls.");
-      setCallState('error');
-      return;
+    if (!targetRoomUrl.includes('.whereby.com/')) {
+        toast({ variant: 'destructive', title: 'Invalid URL', description: 'Please enter a valid Whereby room URL.' });
+        return;
     }
+    setCurrentRoomUrl(targetRoomUrl);
+    toast({ title: 'Joining Call', description: `Attempting to join ${targetRoomUrl}`});
+  }, [manualRoomUrl, toast]);
 
-    setCallState('joining');
-    setErrorMsg(null);
+  const handleLeaveCall = useCallback(() => {
+    setCurrentRoomUrl(null);
+    toast({ title: 'Call Closed', description: 'You have closed the video consultation window.' });
+  }, [toast]);
 
-    const newCallObject = DailyIframe.createFrame(callFrameRef.current!, {
-      iframeStyle: {
-        position: 'relative',
-        width: '100%',
-        height: '100%',
-        border: '0',
-        borderRadius: '0.375rem',
-      },
-      ...CALL_OPTIONS,
-    });
-
-    setCallObject(newCallObject);
-
-    newCallObject
-      .on('loaded', () => console.log('Daily call frame loaded'))
-      .on('joining-meeting', () => { setCallState('joining'); console.log('Joining meeting...'); })
-      .on('joined-meeting', () => { setCallState('joined'); toast({ title: 'Call Joined', description: 'Successfully joined the video consultation.' }); })
-      .on('left-meeting', () => {
-        setCallState('left');
-        newCallObject.destroy();
-        setCallObject(null);
-        toast({ title: 'Call Left', description: 'You have left the video consultation.' });
-      })
-      .on('error', (event) => {
-        console.error('Daily call error:', event);
-        setErrorMsg(event?.errorMsg || 'An unknown error occurred.');
-        setCallState('error');
-        newCallObject.destroy();
-        setCallObject(null);
-        toast({ variant: 'destructive', title: 'Call Error', description: event?.errorMsg || 'Could not connect.' });
-      });
-
-    try {
-      await newCallObject.join({ url: targetRoomUrl });
-    } catch (e: any) {
-      console.error('Error joining call:', e);
-      setErrorMsg(e?.message || 'Failed to join the call.');
-      setCallState('error');
-      newCallObject.destroy();
-      setCallObject(null);
-    }
-  }, [roomUrlToJoin, toast]);
-
-  const handleLeaveCall = useCallback(async () => {
-    if (callObject) {
-      setCallState('leaving');
-      await callObject.leave();
-    }
-  }, [callObject]);
-
-  useEffect(() => {
-    return () => {
-      if (callObject) {
-        callObject.destroy();
-      }
-    };
-  }, [callObject]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Video Consultation</h1>
-          <p className="text-muted-foreground">Secure video calls with patients and other healthcare professionals.</p>
+          <h1 className="text-2xl font-semibold">Video Consultation (Whereby)</h1>
+          <p className="text-muted-foreground">Secure video calls with patients and other healthcare professionals using Whereby.</p>
         </div>
         <Button asChild variant="outline">
           <Link href="/video-consult/schedule">
@@ -172,59 +107,62 @@ export default function VideoConsultPage() {
 
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="flex items-center"><Video className="mr-2 h-5 w-5 text-primary" /> Live Video Call</CardTitle>
+          <CardTitle className="flex items-center"><Video className="mr-2 h-5 w-5 text-primary" /> Video Call Window</CardTitle>
           <CardDescription>
-            {callState === 'idle' || callState === 'left' || callState === 'error' ? 'Enter a Daily.co room URL or select a scheduled call to join.' : 'Video call in progress.'}
+            {currentRoomUrl ? 'Video call in progress via Whereby.' : 'Enter a Whereby room URL or select a scheduled call to join.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {errorMsg && callState === 'error' && (
+          {errorMsg && (
             <Alert variant="destructive" className="mb-4">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Video Call Error</AlertTitle>
+              <AlertTitle>Error</AlertTitle>
               <AlertDescription>{errorMsg}</AlertDescription>
             </Alert>
           )}
 
-          {(callState === 'idle' || callState === 'left' || callState === 'error') && (
+          {!currentRoomUrl && (
             <div className="space-y-3 max-w-md">
               <div>
-                <Label htmlFor="room-url">Daily.co Room URL (Manual Join)</Label>
+                <Label htmlFor="room-url">Whereby Room URL (Manual Join)</Label>
                 <Input
                   id="room-url"
                   type="url"
-                  placeholder="https://your-domain.daily.co/room-name"
-                  value={roomUrlToJoin}
-                  onChange={(e) => setRoomUrlToJoin(e.target.value)}
-                  disabled={callState === 'joining' || callState === 'joined'}
+                  placeholder="https://your-subdomain.whereby.com/room-name"
+                  value={manualRoomUrl}
+                  onChange={(e) => setManualRoomUrl(e.target.value)}
                 />
               </div>
               <Button
                 onClick={() => handleJoinCall()}
-                disabled={!roomUrlToJoin || callState === 'joining' || callState === 'joined'}
+                disabled={!manualRoomUrl}
                 className="w-full"
               >
                 <LogIn className="mr-2 h-4 w-4" />
-                {callState === 'joining' ? 'Joining...' : 'Join Manual URL'}
+                Join Manual URL
               </Button>
             </div>
           )}
 
-          <div
-            ref={callFrameRef}
-            className={`aspect-video bg-muted rounded-lg shadow-inner ${callState === 'joined' ? 'block' : 'hidden'}`}
-            style={{ height: callState === 'joined' ? 'auto' : '0px', minHeight: callState === 'joined' ? '450px' : '0px' }}
-          />
+          {currentRoomUrl && (
+            <div className="relative aspect-video bg-muted rounded-lg shadow-inner overflow-hidden">
+              <iframe
+                src={currentRoomUrl}
+                allow="camera; microphone; fullscreen; speaker; display-capture"
+                className="absolute top-0 left-0 w-full h-full border-0"
+                title="Whereby Video Call"
+              ></iframe>
+            </div>
+          )}
 
-          {callState === 'joined' && (
+          {currentRoomUrl && (
             <Button
               onClick={handleLeaveCall}
               variant="destructive"
               className="w-full mt-4 max-w-md"
-              disabled={callState === 'leaving'}
             >
-              <LogOut className="mr-2 h-4 w-4" />
-              {callState === 'leaving' ? 'Leaving...' : 'Leave Call'}
+              <XCircle className="mr-2 h-4 w-4" /> {/* Changed icon to XCircle for closing */}
+              Close Call Window
             </Button>
           )}
         </CardContent>
@@ -238,7 +176,7 @@ export default function VideoConsultPage() {
               <RefreshCw className={`h-4 w-4 ${isLoadingConsults ? 'animate-spin' : ''}`} />
             </Button>
           </div>
-          <CardDescription>Upcoming and past video calls.</CardDescription>
+          <CardDescription>Upcoming and past video calls. Ensure your Whereby subdomain is correctly set in environment variables.</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingConsults && (
@@ -280,11 +218,12 @@ export default function VideoConsultPage() {
                       <p className="flex items-center"><User className="mr-2 h-4 w-4 text-primary/80" /> Patient: {consult.patientName}</p>
                       <p className="flex items-center"><BriefcaseMedical className="mr-2 h-4 w-4 text-primary/80" /> Nurse: {consult.nurseName}</p>
                       <p className="flex items-center"><ClockIcon className="mr-2 h-4 w-4 text-primary/80" /> Scheduled: {format(parseISO(consult.createdAt), "PPp")}</p>
+                      <p className="text-xs text-muted-foreground truncate" title={consult.roomUrl}>Room: {consult.roomUrl}</p>
                     </CardContent>
                     <CardFooter className="pt-3">
                        <Button 
-                          onClick={() => handleJoinCall(consult.dailyRoomUrl)} 
-                          disabled={callState === 'joining' || callState === 'joined' || consult.status !== 'scheduled'}
+                          onClick={() => handleJoinCall(consult.roomUrl)} 
+                          disabled={!!currentRoomUrl || consult.status !== 'scheduled'}
                           className="w-full"
                         >
                          <LogIn className="mr-2 h-4 w-4" />
@@ -301,13 +240,14 @@ export default function VideoConsultPage() {
 
       <Card className="shadow-lg bg-blue-500/10 border-blue-500/30">
         <CardHeader>
-            <CardTitle className="text-lg flex items-center text-blue-700 dark:text-blue-400">Integration Notes</CardTitle>
+            <CardTitle className="text-lg flex items-center text-blue-700 dark:text-blue-400">Whereby Integration Notes</CardTitle>
         </CardHeader>
         <CardContent>
             <ul className="list-disc pl-5 space-y-1 text-sm text-blue-600 dark:text-blue-300">
-                <li>This page uses Daily.co Prebuilt UI for joining calls.</li>
-                <li>Scheduled consults generate a unique Daily.co room URL. Ensure your `NEXT_PUBLIC_DAILY_CO_BASE_URL` in `.env` is correct.</li>
-                <li>Room URLs for scheduled calls are stored in Firestore.</li>
+                <li>This page now uses Whereby for video calls via an iframe embed.</li>
+                <li>Scheduled consults generate a unique Whereby room URL using your subdomain.</li>
+                <li>Ensure `NEXT_PUBLIC_WHEREBY_SUBDOMAIN` in your `.env` file is set to your actual Whereby subdomain (e.g., "your-company-name" if your rooms are at your-company-name.whereby.com).</li>
+                <li>Whereby rooms need to exist or be creatable on-the-fly under your subdomain.</li>
             </ul>
         </CardContent>
     </Card>

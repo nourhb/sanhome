@@ -13,7 +13,7 @@ import {
   collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp,
   query, where, updateDoc, deleteDoc, writeBatch, getCountFromServer, orderBy, limit, setDoc
 } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword } from 'firebase/auth'; // Ensure this is imported
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { format } from 'date-fns';
 
@@ -583,12 +583,24 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
 
   try {
     // Seed Users
-    console.log("[ACTION_LOG] seedDatabase: Checking 'users' collection...");
+    console.log("[ACTION_LOG] seedDatabase: Checking 'users' collection in Firestore...");
     const usersCollectionRef = collection(db, "users");
-    const currentUsersSnapshot = await getDocs(query(usersCollectionRef, limit(1)));
+    let currentUsersSnapshot;
+    try {
+        currentUsersSnapshot = await getDocs(query(usersCollectionRef, limit(1)));
+        console.log(`[ACTION_LOG] seedDatabase: Successfully checked 'users' collection. Empty: ${currentUsersSnapshot.empty}`);
+    } catch (dbError: any) {
+        console.error(`[ACTION_ERROR] seedDatabase: FAILED to check 'users' collection. Firestore permission denied or API not enabled for reads? Code: ${dbError.code}, Message: ${dbError.message}`, dbError);
+        return { 
+            success: false, 
+            message: `Database seeding failed: Could not check 'users' collection. Ensure Firestore API is enabled and rules allow reads. Details: ${dbError.message}`,
+            details: results 
+        };
+    }
+    
     if (currentUsersSnapshot.empty) {
       console.log("[ACTION_LOG] seedDatabase: 'users' collection is empty. Attempting to seed users...");
-      const sampleAuthUsers = Array.from({ length: 10 }, (_, index) => ({ 
+      const sampleAuthUsers = Array.from({ length: 10 }, (_, index) => ({ // Reduced from 20 to 10 for quicker testing
         email: `user${index + 1}@sanhome.com`, 
         password: "Password123!",
         firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
@@ -842,7 +854,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
 
   } catch (error: any) {
     console.error("[ACTION_ERROR] seedDatabase: CRITICAL error during seeding process. Code:", error.code, "Message:", error.message, "Full Error object:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
-    let criticalErrorMessage = `Database seeding failed critically: Missing or insufficient permissions. Ensure Firestore/Auth rules allow writes and the API is enabled. Check server console for specific Firebase error codes.`;
+    let criticalErrorMessage = `Database seeding failed critically: Missing or insufficient permissions. Ensure Firestore/Auth rules allow writes for authenticated users and that you are logged in when triggering this. Also check project API enablement. Check server console for specific Firebase error codes. Details: ${error.message}`;
     
     if (error.code === 'auth/email-already-in-use') {
         criticalErrorMessage = "Database seeding failed critically: One or more user emails already exist in Firebase Authentication. Clear existing test users from Firebase Auth or use different emails for seeding.";
@@ -861,6 +873,7 @@ export async function fetchPatients(): Promise<{ data?: PatientListItem[], error
   console.log("[ACTION_LOG] fetchPatients: Initiated from Firestore.");
   try {
     const patientsCollectionRef = collection(db, "patients");
+    // const q = query(patientsCollectionRef); // Simplified query
     const q = query(patientsCollectionRef, orderBy("createdAt", "desc"));
     console.log("[ACTION_LOG] fetchPatients: Created query. Attempting getDocs...");
 

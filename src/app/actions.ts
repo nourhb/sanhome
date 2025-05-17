@@ -8,12 +8,12 @@ import {
 } from '@/ai/flows/personalized-care-suggestions';
 import { z } from 'zod';
 import { generateRandomPassword, generateRandomString, generatePhoneNumber, generateDateOfBirth } from '@/lib/utils';
-import { auth, db, storage } from '@/lib/firebase'; // db and storage are re-enabled
+import { auth, db, storage } from '@/lib/firebase';
 import {
   collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp,
   query, where, updateDoc, deleteDoc, writeBatch, getCountFromServer, orderBy, limit, setDoc
 } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth'; // Ensure this is imported
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { format } from 'date-fns';
 
@@ -34,7 +34,7 @@ export async function fetchPersonalizedCareSuggestions(
     if (e instanceof z.ZodError) {
       return { error: e.errors.map(err => err.message).join(", ") };
     }
-    console.error("Error fetching personalized care suggestions:", e);
+    console.error("[ACTION_ERROR] Error fetching personalized care suggestions:", e);
     return { error: "Failed to generate care suggestions. Please try again." };
   }
 }
@@ -103,7 +103,7 @@ export async function fetchPatientById(id: string): Promise<{ data?: PatientList
     }
   } catch (error: any) {
     console.error(`[ACTION_ERROR] fetchPatientById: Error fetching patient ${id}:`, error.code, error.message, error);
-    return { error: `Failed to fetch patient: ${error.message}` };
+    return { error: `Failed to fetch patient: ${error.message} (Code: ${error.code || 'N/A'})` };
   }
 }
 
@@ -156,9 +156,9 @@ export async function addPatient(
       mobilityStatus: validatedValues.mobilityStatus,
       pathologies: validatedValues.pathologies.split(',').map(p => p.trim()).filter(p => p.length > 0),
       allergies: validatedValues.allergies ? validatedValues.allergies.split(',').map(a => a.trim()).filter(a => a.length > 0) : [],
-      lastVisit: Timestamp.fromDate(new Date()),
-      condition: validatedValues.pathologies.split(',')[0]?.trim() || 'N/A',
-      status: 'Stable',
+      lastVisit: Timestamp.fromDate(new Date()), // Default lastVisit to now
+      condition: validatedValues.pathologies.split(',')[0]?.trim() || 'N/A', // Default condition from first pathology
+      status: 'Stable', // Default status
       createdAt: serverTimestamp(),
     };
 
@@ -172,7 +172,7 @@ export async function addPatient(
     if (error instanceof z.ZodError) {
       return { success: false, message: `Validation failed: ${error.errors.map(e => e.message).join(', ')}` };
     }
-    return { success: false, message: `Failed to add patient: ${error.message}` };
+    return { success: false, message: `Failed to add patient: ${error.message} (Code: ${error.code || 'N/A'})` };
   }
 }
 
@@ -239,13 +239,12 @@ export async function addNurse(
     console.log("[ACTION_LOG] addNurse: Nurse added to Firestore with ID: ", docRef.id);
 
     return { success: true, message: `Nurse ${validatedValues.fullName} added successfully.`, nurseId: docRef.id };
-  } catch (error: any)
-{
+  } catch (error: any) {
     console.error("[ACTION_ERROR] addNurse: Error adding nurse to Firestore: ", error.code, error.message, error);
      if (error instanceof z.ZodError) {
       return { success: false, message: `Validation failed: ${error.errors.map(e => e.message).join(', ')}` };
     }
-    return { success: false, message: `Failed to add nurse: ${error.message}` };
+    return { success: false, message: `Failed to add nurse: ${error.message} (Code: ${error.code || 'N/A'})` };
   }
 }
 
@@ -282,7 +281,7 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
       videoConsultsSnapshot 
     ] = await Promise.all([
       getCountFromServer(patientsCollectionRef),
-      getDocs(query(nursesCollectionRef)), // Fetch all nurse docs to count available ones
+      getDocs(query(nursesCollectionRef)), 
       getDocs(query(videoConsultsCollectionRef))
     ]);
     console.log("[ACTION_LOG] fetchDashboardStats: Counts received.");
@@ -309,7 +308,10 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
         }
       }
       const status = consultData.status as string;
-      statusCounts[status] = (statusCounts[status] || 0) + 1;
+      if (statusCounts.hasOwnProperty(status)) { // Check if status is a valid key
+        statusCounts[status] = (statusCounts[status] || 0) + 1;
+      }
+
 
       const nurseName = consultData.nurseName as string;
       if (nurseName) {
@@ -384,8 +386,8 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
   } catch (error: any) {
     console.error("[ACTION_ERROR] fetchDashboardStats: Error fetching dashboard stats from Firestore:", error.code, error.message, error);
     return {
-      error: `Could not load dashboard statistics: ${error.message}`,
-      data: { // Provide default structure on error to prevent crashes
+      error: `Could not load dashboard statistics: ${error.message} (Code: ${error.code || 'N/A'})`,
+      data: { 
         activePatients: 0, activePatientsChange: "N/A",
         upcomingAppointments: 0, upcomingAppointmentsToday: "N/A",
         availableNurses: 0, availableNursesOnline: "N/A",
@@ -486,7 +488,7 @@ export async function scheduleVideoConsult(
     if (error instanceof z.ZodError) {
       return { success: false, message: `Validation failed: ${error.errors.map(e => e.message).join(', ')}` };
     }
-    return { success: false, message: `Failed to schedule video consult: ${error.message}` };
+    return { success: false, message: `Failed to schedule video consult: ${error.message} (Code: ${error.code || 'N/A'})` };
   }
 }
 
@@ -517,7 +519,7 @@ export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListIte
     return { data: consultsList };
   } catch (error: any) {
     console.error("[ACTION_ERROR] fetchVideoConsults: Error fetching video consults from Firestore:", error.code, error.message, error);
-    return { error: `Failed to fetch video consults: ${error.message}` };
+    return { error: `Failed to fetch video consults: ${error.message} (Code: ${error.code || 'N/A'})` };
   }
 }
 
@@ -545,17 +547,28 @@ const genders = ["homme", "femme"];
 const mockTunisianPatients = [
   {
     name: "Ahmed Ben Salah", age: 68,
-    phone: generatePhoneNumber(), email: "ahmed.bensalah@example.com", address: addresses[0],
+    phone: generatePhoneNumber(), email: "ahmed.bensalah@example.com", address: addresses[Math.floor(Math.random() * addresses.length)],
     mobilityStatus: "Ambulatoire avec canne", pathologies: ["Diabète", "Hypertension"], allergies: ["Pénicilline"],
     lastVisitDate: "2024-07-15", condition: "Diabète de type 2", status: "Stable", hint: "elderly man tunisian"
   },
   {
     name: "Fatima Bouaziz", age: 75,
-    phone: generatePhoneNumber(), email: "fatima.bouaziz@example.com", address: addresses[1],
+    phone: generatePhoneNumber(), email: "fatima.bouaziz@example.com", address: addresses[Math.floor(Math.random() * addresses.length)],
     mobilityStatus: "Fauteuil roulant", pathologies: ["Arthrose", "Problèmes cardiaques"], allergies: ["Aspirine"],
     lastVisitDate: "2024-07-20", condition: "Arthrose sévère", status: "Needs Follow-up", hint: "elderly woman tunisian"
   },
-  // Add more mock patients if needed
+  {
+    name: "Ali Trabelsi", age: 55,
+    phone: generatePhoneNumber(), email: "ali.trabelsi@example.com", address: addresses[Math.floor(Math.random() * addresses.length)],
+    mobilityStatus: "Mobile", pathologies: ["Asthme"], allergies: ["Pollen"],
+    lastVisitDate: "2024-07-25", condition: "Asthme chronique", status: "Stable", hint: "man tunisian"
+  },
+  {
+    name: "Nour Jlassi", age: 62,
+    phone: generatePhoneNumber(), email: "nour.jlassi@example.com", address: addresses[Math.floor(Math.random() * addresses.length)],
+    mobilityStatus: "Limitée, utilise un déambulateur", pathologies: ["Ostéoporose", "Anémie"], allergies: [],
+    lastVisitDate: "2024-07-18", condition: "Ostéoporose", status: "Improving", hint: "woman tunisian"
+  },
 ];
 
 const mockTunisianNurses = [
@@ -567,7 +580,14 @@ const mockTunisianNurses = [
     name: "Karim Zayani", specialty: "Soins généraux", location: "Hôpital Sahloul, Sousse",
     phone: generatePhoneNumber(), email: "karim.zayani@sanhome.com", status: "On Duty", hint: "nurse man tunisian"
   },
-  // Add more mock nurses if needed
+  {
+    name: "Sana Ben Ali", specialty: "Pédiatrie", location: "Centre de Santé Mère-Enfant, Sfax",
+    phone: generatePhoneNumber(), email: "sana.benali@sanhome.com", status: "Available", hint: "nurse young tunisian"
+  },
+  {
+    name: "Mohamed Khemiri", specialty: "Cardiologie", location: "Hôpital La Rabta, Tunis",
+    phone: generatePhoneNumber(), email: "mohamed.khemiri@sanhome.com", status: "Unavailable", hint: "doctor man tunisian"
+  },
 ];
 
 export async function seedDatabase(): Promise<{ success: boolean; message: string; details?: Record<string, string> }> {
@@ -590,65 +610,66 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
         currentUsersSnapshot = await getDocs(query(usersCollectionRef, limit(1)));
         console.log(`[ACTION_LOG] seedDatabase: Successfully checked 'users' collection. Empty: ${currentUsersSnapshot.empty}`);
     } catch (dbError: any) {
-        console.error(`[ACTION_ERROR] seedDatabase: FAILED to check 'users' collection. Firestore permission denied or API not enabled for reads? Code: ${dbError.code}, Message: ${dbError.message}`, dbError);
+        const specificError = `Firebase error: ${dbError.code} - ${dbError.message}. Check Firestore API enablement and Security Rules for read access.`;
+        console.error(`[ACTION_ERROR] seedDatabase: FAILED to check 'users' collection. ${specificError}`, dbError);
         return { 
             success: false, 
-            message: `Database seeding failed: Could not check 'users' collection. Ensure Firestore API is enabled and rules allow reads. Details: ${dbError.message}`,
+            message: `Database seeding failed at initial check of 'users' collection. ${specificError}`,
             details: results 
         };
     }
     
     if (currentUsersSnapshot.empty) {
       console.log("[ACTION_LOG] seedDatabase: 'users' collection is empty. Attempting to seed users...");
-      const sampleAuthUsers = Array.from({ length: 10 }, (_, index) => ({ // Reduced from 20 to 10 for quicker testing
-        email: `user${index + 1}@sanhome.com`, 
-        password: "Password123!",
-        firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
-        lastName: lastNames[Math.floor(Math.random() * lastNames.length)],
-        role: tunisianRoles[Math.floor(Math.random() * tunisianRoles.length)],
-        phoneNumber: generatePhoneNumber(),
-        address: addresses[Math.floor(Math.random() * addresses.length)],
-        dateOfBirth: generateDateOfBirth(),
-        gender: genders[Math.floor(Math.random() * genders.length)],
-      }));
+      if (!auth) {
+        console.error("[ACTION_ERROR] seedDatabase: Firebase Auth object is NOT INITIALIZED. Cannot seed users.");
+        results.users = "Critical Error: Firebase Auth not initialized. User seeding skipped.";
+        allSuccess = false;
+      } else {
+        const sampleAuthUsers = Array.from({ length: 10 }, (_, index) => ({ // Reduced for quicker testing
+          email: `user${index + 1}@sanhome.com`, 
+          password: "Password123!",
+          firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
+          lastName: lastNames[Math.floor(Math.random() * lastNames.length)],
+          role: tunisianRoles[Math.floor(Math.random() * tunisianRoles.length)],
+          phoneNumber: generatePhoneNumber(),
+          address: addresses[Math.floor(Math.random() * addresses.length)],
+          dateOfBirth: generateDateOfBirth(),
+          gender: genders[Math.floor(Math.random() * genders.length)],
+        }));
 
-      let seededUsersCount = 0;
-      for (const userData of sampleAuthUsers) {
-        try {
-          console.log(`[ACTION_LOG] seedDatabase: Attempting to create auth user: ${userData.email}`);
-          if (!auth) {
-            console.error("[ACTION_ERROR] seedDatabase: Firebase Auth object is NOT INITIALIZED. Cannot create user.");
-            results.users += `Critical Error for ${userData.email}: Firebase Auth not initialized. `;
+        let seededUsersCount = 0;
+        for (const userData of sampleAuthUsers) {
+          try {
+            console.log(`[ACTION_LOG] seedDatabase: Attempting to create auth user: ${userData.email}`);
+            const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
+            const user = userCredential.user;
+            console.log(`[ACTION_LOG] seedDatabase: Auth user ${userData.email} created with UID ${user.uid}. Preparing Firestore profile.`);
+
+            const userProfile = {
+              email: userData.email,
+              firstName: userData.firstName,
+              lastName: userData.lastName,
+              role: userData.role,
+              phoneNumber: userData.phoneNumber,
+              address: userData.address,
+              dateOfBirth: Timestamp.fromDate(new Date(userData.dateOfBirth)),
+              gender: userData.gender,
+              createdAt: serverTimestamp(),
+            };
+            console.log(`[ACTION_LOG] seedDatabase: Attempting to set Firestore profile for UID ${user.uid}`);
+            await setDoc(doc(db, "users", user.uid), userProfile);
+            userRefs.push({ uid: user.uid, name: `${userData.firstName} ${userData.lastName}`, email: userData.email });
+            seededUsersCount++;
+            console.log(`[ACTION_LOG] Seeded user profile in Firestore for ${userData.email}`);
+          } catch (e: any) {
+            console.error(`[ACTION_ERROR] seedDatabase: Failed to seed user ${userData.email}. Code: ${e.code}, Message: ${e.message}`, e);
+            results.users += `Error for ${userData.email}: ${e.message} (Code: ${e.code}). `;
             allSuccess = false;
-            continue; 
           }
-          const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
-          const user = userCredential.user;
-          console.log(`[ACTION_LOG] seedDatabase: Auth user ${userData.email} created with UID ${user.uid}. Preparing Firestore profile.`);
-
-          const userProfile = {
-            email: userData.email,
-            firstName: userData.firstName,
-            lastName: userData.lastName,
-            role: userData.role,
-            phoneNumber: userData.phoneNumber,
-            address: userData.address,
-            dateOfBirth: Timestamp.fromDate(new Date(userData.dateOfBirth)),
-            gender: userData.gender,
-            createdAt: serverTimestamp(),
-          };
-          console.log(`[ACTION_LOG] seedDatabase: Attempting to set Firestore profile for UID ${user.uid}`);
-          await setDoc(doc(db, "users", user.uid), userProfile);
-          userRefs.push({ uid: user.uid, name: `${userData.firstName} ${userData.lastName}`, email: userData.email });
-          seededUsersCount++;
-          console.log(`[ACTION_LOG] Seeded user profile in Firestore for ${userData.email}`);
-        } catch (e: any) {
-          console.error(`[ACTION_ERROR] seedDatabase: Failed to seed user ${userData.email}. Code: ${e.code}, Message: ${e.message}`, e);
-          results.users += `Error for ${userData.email}: ${e.message} (Code: ${e.code}). `;
-          allSuccess = false;
         }
+        results.users = results.users || `Seeded ${seededUsersCount} users.`;
       }
-      results.users = results.users || `Seeded ${seededUsersCount} users.`;
     } else {
       results.users = "Users collection is not empty. Skipping seeding users.";
       console.log("[ACTION_LOG] seedDatabase: 'users' collection not empty, skipping user seeding.");
@@ -753,6 +774,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
         console.log(`[ACTION_LOG] seedDatabase: Loaded ${nurseRefs.length} existing nurse references.`);
     }
     
+    // Re-assign primary nurses if patients and nurses were seeded in this run
     if (currentPatientsSnapshot.empty && currentNursesSnapshot.empty && patientRefs.length > 0 && nurseRefs.length > 0) {
         console.log("[ACTION_LOG] seedDatabase: Re-assigning primary nurses to newly seeded patients using newly seeded nurses.");
         const batch = writeBatch(db);
@@ -791,14 +813,15 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
       console.log("[ACTION_LOG] seedDatabase: 'videoConsults' collection is empty. Attempting to seed video consults...");
       if (patientRefs.length > 0 && nurseRefs.length > 0) {
         let seededConsultsCount = 0;
-        for (let i = 0; i < Math.min(5, patientRefs.length, nurseRefs.length); i++) {
+        for (let i = 0; i < Math.min(5, patientRefs.length, nurseRefs.length); i++) { // Seed up to 5 consults
           try {
-            const randomPatient = patientRefs[i % patientRefs.length];
-            const randomNurse = nurseRefs[i % nurseRefs.length];
+            const randomPatient = patientRefs[i % patientRefs.length]; // Cycle through patients
+            const randomNurse = nurseRefs[i % nurseRefs.length];   // Cycle through nurses
 
             const consultDate = new Date();
-            consultDate.setDate(consultDate.getDate() + Math.floor(Math.random() * 30) - 15);
-            consultDate.setHours(Math.floor(Math.random() * 10) + 8, Math.random() > 0.5 ? 30 : 0, 0, 0);
+            // Schedule some in the past, some in the future
+            consultDate.setDate(consultDate.getDate() + Math.floor(Math.random() * 30) - 15); 
+            consultDate.setHours(Math.floor(Math.random() * 10) + 8, Math.random() > 0.5 ? 30 : 0, 0, 0); // Between 8 AM and 5:30 PM
 
             const statuses: VideoConsultListItem['status'][] = ['scheduled', 'completed', 'cancelled'];
             const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
@@ -838,32 +861,30 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     }
 
     console.log("[ACTION_LOG] seedDatabase: Seeding process completed with allSuccess =", allSuccess);
-    if (allSuccess && (results.users || results.patients || results.nurses || results.videoConsults)) {
-      let message = "Database seeding process finished.";
-      if (Object.values(results).some(val => val.startsWith("Seeded"))) {
-        message = "Database seeding process finished successfully.";
-      } else if (Object.values(results).every(val => val.includes("Skipping"))) {
-        message = "All collections already populated. No new data seeded.";
-      }
-      return { success: true, message, details: results };
+    if (allSuccess && (results.users.startsWith("Seeded") || results.patients.startsWith("Seeded") || results.nurses.startsWith("Seeded") || results.videoConsults.startsWith("Seeded") )) {
+      return { success: true, message: "Database seeding process finished successfully.", details: results };
     } else if (!allSuccess) {
-      return { success: false, message: "Database seeding completed with some errors.", details: results };
+      return { success: false, message: "Database seeding completed with some errors. Check server logs for details.", details: results };
     } else { 
-        return { success: true, message: "All collections already populated. No new data seeded.", details: results };
+        return { success: true, message: "All collections appear to be populated or no new data was seeded. Check server logs for details.", details: results };
     }
 
   } catch (error: any) {
-    console.error("[ACTION_ERROR] seedDatabase: CRITICAL error during seeding process. Code:", error.code, "Message:", error.message, "Full Error object:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
-    let criticalErrorMessage = `Database seeding failed critically: Missing or insufficient permissions. Ensure Firestore/Auth rules allow writes for authenticated users and that you are logged in when triggering this. Also check project API enablement. Check server console for specific Firebase error codes. Details: ${error.message}`;
+    const firebaseErrorCode = error.code || 'N/A';
+    const firebaseErrorMessage = error.message || 'Unknown error';
+    let specificMessage = `Database seeding failed critically: ${firebaseErrorMessage} (Code: ${firebaseErrorCode}).`;
     
-    if (error.code === 'auth/email-already-in-use') {
-        criticalErrorMessage = "Database seeding failed critically: One or more user emails already exist in Firebase Authentication. Clear existing test users from Firebase Auth or use different emails for seeding.";
-    } else if (error.code === 7 || error.code === 'permission-denied' || error.message?.includes('PERMISSION_DENIED') || error.message?.includes("Missing or insufficient permissions")) {
-        criticalErrorMessage = "Database seeding failed critically: Missing or insufficient permissions. Ensure Firestore/Auth rules allow writes for authenticated users and that you are logged in when triggering this. Also check project API enablement. Check server console for specific Firebase error codes.";
-    }  else if (error.message?.includes("auth is not a function") || error.message?.includes("Firebase: Error (auth/internal-error).") || String(error).includes("auth is not defined") || String(error).includes("auth is null")) {
-        criticalErrorMessage = "Database seeding failed critically: Firebase Authentication service might not be initialized correctly or available. Check Firebase setup and `lib/firebase.ts`. Details: " + error.message;
+    console.error(`[ACTION_ERROR] seedDatabase: CRITICAL error during seeding process. Code: ${firebaseErrorCode}, Message: ${firebaseErrorMessage}`, error);
+
+    if (firebaseErrorCode === 'auth/email-already-in-use') {
+        specificMessage = "Database seeding failed: One or more user emails already exist in Firebase Authentication. Clear existing test users or use different emails.";
+    } else if (firebaseErrorCode === 7 || firebaseErrorCode === 'permission-denied' || firebaseErrorMessage.includes('PERMISSION_DENIED') || firebaseErrorMessage.includes("Missing or insufficient permissions")) {
+        specificMessage = "Database seeding failed: Missing or insufficient permissions. Ensure Firestore/Auth rules allow writes for authenticated users and that you are logged in. Also check project API enablement. Firebase Code: " + firebaseErrorCode;
+    }  else if (firebaseErrorMessage.includes("auth is not a function") || firebaseErrorMessage.includes("auth is not defined") || firebaseErrorMessage.includes("auth is null") || firebaseErrorMessage.includes("Firebase: Error (auth/internal-error).") ) {
+        specificMessage = "Database seeding failed: Firebase Authentication service might not be initialized correctly or available. Check Firebase setup in `lib/firebase.ts`. Firebase Message: " + firebaseErrorMessage;
     }
-    return { success: false, message: criticalErrorMessage, details: results };
+    
+    return { success: false, message: specificMessage, details: results };
   }
 }
 
@@ -873,9 +894,9 @@ export async function fetchPatients(): Promise<{ data?: PatientListItem[], error
   console.log("[ACTION_LOG] fetchPatients: Initiated from Firestore.");
   try {
     const patientsCollectionRef = collection(db, "patients");
-    // const q = query(patientsCollectionRef); // Simplified query
     const q = query(patientsCollectionRef, orderBy("createdAt", "desc"));
-    console.log("[ACTION_LOG] fetchPatients: Created query. Attempting getDocs...");
+    // const q = collection(db, "patients"); // Simplified query for testing
+    console.log("[ACTION_LOG] fetchPatients: Created collection reference. Attempting getDocs...");
 
     const patientsSnapshot = await getDocs(q);
     console.log(`[ACTION_LOG] fetchPatients: Firestore getDocs successful. Found ${patientsSnapshot.docs.length} documents.`);
@@ -906,7 +927,7 @@ export async function fetchPatients(): Promise<{ data?: PatientListItem[], error
     return { data: patientsList };
   } catch (error: any) {
     console.error("[ACTION_ERROR] fetchPatients: Error fetching patients from Firestore:", error.code, error.message, error);
-    return { error: `Failed to fetch patients: ${error.message}` };
+    return { error: `Failed to fetch patients: ${error.message} (Code: ${error.code || 'N/A'})` };
   }
 }
 
@@ -938,8 +959,6 @@ export async function fetchNurses(): Promise<{ data?: NurseListItem[], error?: s
     return { data: nursesList };
   } catch (error: any) {
     console.error("[ACTION_ERROR] fetchNurses: Error fetching nurses from Firestore:", error.code, error.message, error);
-    return { error: `Failed to fetch nurses: ${error.message}` };
+    return { error: `Failed to fetch nurses: ${error.message} (Code: ${error.code || 'N/A'})` };
   }
 }
-
-    

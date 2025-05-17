@@ -16,8 +16,8 @@ import {
   signOut,
   sendEmailVerification
 } from "firebase/auth";
-import { auth } from "@/lib/firebase";
-import type { z } from "zod";
+import { auth, db } from "@/lib/firebase"; // Import db
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"; // Import Firestore functions
 
 // Define types for login and signup form values if not already available
 // For now, using simple email/password structure
@@ -26,11 +26,24 @@ interface AuthFormValues {
   password: string;
 }
 
+// Extend FirebaseUser to include our custom role if needed, or manage role separately
+export interface AppUser extends FirebaseUser {
+  appRole?: string; // Or 'admin', 'patient', 'nurse' etc.
+}
 
 interface AuthContextType {
-  currentUser: FirebaseUser | null;
+  currentUser: AppUser | null;
+  userRole: string | null; // e.g., 'admin', 'patient', 'nurse'
   loading: boolean;
-  signup: (values: AuthFormValues) => Promise<{ user?: FirebaseUser; error?: AuthError }>;
+  signup: (values: AuthFormValues & { // Include additional signup fields
+    firstName: string;
+    lastName: string;
+    role: string;
+    phoneNumber: string;
+    address: string;
+    dateOfBirth: Date;
+    gender: string;
+  }) => Promise<{ user?: FirebaseUser; error?: AuthError }>;
   login: (values: AuthFormValues) => Promise<{ user?: FirebaseUser; error?: AuthError }>;
   logout: () => Promise<void>;
 }
@@ -46,27 +59,68 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        // User is signed in, now fetch their role from Firestore
+        const userDocRef = doc(db, "users", user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          const userData = userDocSnap.data();
+          setCurrentUser({ ...user, appRole: userData.role } as AppUser);
+          setUserRole(userData.role || null);
+        } else {
+          // No custom profile yet, or role not set
+          setCurrentUser(user as AppUser);
+          setUserRole(null);
+          console.warn(`No Firestore profile found for user ${user.uid}, role will be null.`);
+        }
+      } else {
+        // User is signed out
+        setCurrentUser(null);
+        setUserRole(null);
+      }
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  const signup = async (values: AuthFormValues) => {
+  const signup = async (values: AuthFormValues & { 
+    firstName: string; 
+    lastName: string; 
+    role: string;
+    phoneNumber: string;
+    address: string;
+    dateOfBirth: Date;
+    gender: string;
+   }) => {
     setLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
-      if (userCredential.user) {
-        await sendEmailVerification(userCredential.user);
-        // You might want to update user profile here if needed
+      const fbUser = userCredential.user;
+      if (fbUser) {
+        // Save additional user info to Firestore users collection
+        const userDocRef = doc(db, "users", fbUser.uid);
+        await setDoc(userDocRef, {
+          email: values.email,
+          firstName: values.firstName,
+          lastName: values.lastName,
+          role: values.role, // This is the role selected during signup
+          phoneNumber: values.phoneNumber,
+          address: values.address,
+          dateOfBirth: values.dateOfBirth, // Store as Firestore Timestamp if preferred
+          gender: values.gender,
+          createdAt: serverTimestamp(),
+        });
+        setCurrentUser({ ...fbUser, appRole: values.role } as AppUser);
+        setUserRole(values.role);
+        await sendEmailVerification(fbUser);
       }
-      setCurrentUser(userCredential.user);
-      return { user: userCredential.user };
+      return { user: fbUser };
     } catch (error) {
       return { error: error as AuthError };
     } finally {
@@ -78,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, values.email, values.password);
-      setCurrentUser(userCredential.user);
+      // Auth state change will trigger useEffect to fetch role
       return { user: userCredential.user };
     } catch (error) {
       return { error: error as AuthError };
@@ -91,10 +145,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       await signOut(auth);
-      setCurrentUser(null);
+      // Auth state change will clear user and role
     } catch (error) {
       console.error("Error signing out: ", error);
-      // Handle logout error if needed
     } finally {
       setLoading(false);
     }
@@ -102,6 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = {
     currentUser,
+    userRole,
     loading,
     signup,
     login,

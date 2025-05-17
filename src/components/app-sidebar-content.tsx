@@ -15,7 +15,7 @@ import {
   Bell,
   Activity,
   Shield,
-  DatabaseZap, // Added icon for Data Viewer
+  DatabaseZap,
 } from "lucide-react"
 
 import { APP_NAME } from "@/lib/constants"
@@ -31,6 +31,7 @@ import {
 import { Logo } from "./logo"
 import { Separator } from "./ui/separator"
 import { Badge } from "./ui/badge"
+import { useAuth } from "@/contexts/auth-context" // Import useAuth
 
 const menuItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -49,16 +50,15 @@ const secondaryMenuItems = [
 
 const adminMenuItems = [
   { href: "/admin/dashboard", label: "Admin Dashboard", icon: Shield },
-  { href: "/dev/data-viewer", label: "Data Viewer", icon: DatabaseZap }, // New Data Viewer link
+  { href: "/dev/data-viewer", label: "Data Viewer", icon: DatabaseZap },
 ]
 
 
 export function AppSidebarContent() {
   const pathname = usePathname()
+  const { userRole } = useAuth(); // Get userRole from AuthContext
 
   const isActive = (path: string) => pathname === path || (path !== "/dashboard" && pathname.startsWith(path))
-  // In a real app, you'd get the user's role from context or session
-  const userRole = "admin"; // Placeholder for demonstration
 
   return (
     <>
@@ -122,7 +122,7 @@ export function AppSidebarContent() {
             </SidebarMenuItem>
           ))}
         </SidebarMenu>
-        {userRole === 'admin' && (
+        {userRole === 'admin' && ( // Use dynamic userRole here
           <>
             <Separator className="my-4" />
             <SidebarMenu>

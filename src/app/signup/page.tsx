@@ -29,7 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 const signupFormSchema = z.object({
   role: z.string().min(1, { message: "Veuillez sélectionner un rôle." }),
   email: z.string().email({ message: "Veuillez entrer une adresse e-mail valide." }),
-  phoneNumber: z.string().min(8, { message: "Le numéro de téléphone est requis." }), // Basic validation
+  phoneNumber: z.string().min(8, { message: "Le numéro de téléphone est requis." }), 
   address: z.string().min(5, { message: "L'adresse est requise." }),
   firstName: z.string().min(1, { message: "Le prénom est requis." }),
   lastName: z.string().min(1, { message: "Le nom est requis." }),
@@ -39,7 +39,7 @@ const signupFormSchema = z.object({
   confirmPassword: z.string().min(6, { message: "Veuillez confirmer le mot de passe." }),
 }).refine(data => data.password === data.confirmPassword, {
   message: "Les mots de passe ne correspondent pas.",
-  path: ["confirmPassword"], // path of error
+  path: ["confirmPassword"],
 });
 
 type SignupFormValues = z.infer<typeof signupFormSchema>;
@@ -51,6 +51,7 @@ const roles = [
   { value: "medecin", label: "Medecin" },
   { value: "aide-soignant", label: "Aide soignant" },
   { value: "kinesitherapeute", label: "Kinesitherapeute" },
+  { value: "admin", label: "Administrateur (Dev)"}, // Added for testing
 ];
 
 export default function SignupPage() {
@@ -63,11 +64,11 @@ export default function SignupPage() {
     resolver: zodResolver(signupFormSchema),
     defaultValues: {
       role: "",
-      email: "m@example.com", // As per screenshot
-      phoneNumber: "", // Example +216 99 999 999
-      address: "", // Example Avenue Habib Bourguiba, Tunis
-      firstName: "", // Example Foulen
-      lastName: "", // Example Ben Foulen
+      email: "m@example.com", 
+      phoneNumber: "", 
+      address: "", 
+      firstName: "", 
+      lastName: "", 
       dateOfBirth: undefined,
       gender: undefined,
       password: "",
@@ -77,12 +78,19 @@ export default function SignupPage() {
 
   async function onSubmit(values: SignupFormValues) {
     setIsLoading(true);
-    // Firebase signup only needs email and password directly.
-    // Other details (firstName, lastName, role, phoneNumber, address, dateOfBirth, gender)
-    // would typically be stored in Firestore or Realtime Database after successful signup.
-    console.log("Full form data:", values);
+    console.log("Signup form data:", values);
     
-    const { error, user } = await signup({ email: values.email, password: values.password });
+    const { error, user } = await signup({ 
+      email: values.email, 
+      password: values.password,
+      firstName: values.firstName,
+      lastName: values.lastName,
+      role: values.role,
+      phoneNumber: values.phoneNumber,
+      address: values.address,
+      dateOfBirth: values.dateOfBirth,
+      gender: values.gender,
+    });
     setIsLoading(false);
 
     if (error) {
@@ -96,7 +104,6 @@ export default function SignupPage() {
         title: "Compte créé !",
         description: "Un e-mail de vérification a été envoyé. Veuillez consulter votre boîte de réception.",
       });
-      // Optionally, save additional user info (values) to Firestore here, associated with user.uid
       router.push("/login");
     }
   }
@@ -321,5 +328,3 @@ export default function SignupPage() {
     </div>
   );
 }
-
-    

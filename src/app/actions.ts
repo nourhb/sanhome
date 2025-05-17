@@ -7,12 +7,13 @@ import {
   type PersonalizedCareSuggestionsOutput
 } from '@/ai/flows/personalized-care-suggestions';
 import { z } from 'zod';
-import { generateRandomPassword, generateRandomString } from '@/lib/utils';
-import { auth, db, storage } from '@/lib/firebase';
+import { generateRandomPassword, generateRandomString, generatePhoneNumber, generateDateOfBirth } from '@/lib/utils';
+import { auth, db, storage } from '@/lib/firebase'; // db and storage are re-enabled
 import {
   collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp,
-  query, where, updateDoc, deleteDoc, writeBatch, getCountFromServer, orderBy, limit
+  query, where, updateDoc, deleteDoc, writeBatch, getCountFromServer, orderBy, limit, setDoc
 } from 'firebase/firestore';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { format } from 'date-fns';
 
@@ -44,7 +45,7 @@ export type PatientListItem = {
   name: string;
   age: number;
   avatarUrl: string;
-  joinDate: string; // Should be ISO string date 'YYYY-MM-DD'
+  joinDate: string; 
   primaryNurse: string;
   phone: string;
   email: string;
@@ -52,7 +53,7 @@ export type PatientListItem = {
   mobilityStatus: string;
   pathologies: string[];
   allergies: string[];
-  lastVisit: string; // Should be ISO string date 'YYYY-MM-DD'
+  lastVisit: string; 
   condition: string;
   status: string;
   hint?: string;
@@ -65,6 +66,7 @@ export async function fetchPatients(): Promise<{ data?: PatientListItem[], error
   console.log("[ACTION_LOG] fetchPatients: Initiated from Firestore.");
   try {
     const patientsCollectionRef = collection(db, "patients");
+    // const q = query(patientsCollectionRef); // Simplified query
     const q = query(patientsCollectionRef, orderBy("createdAt", "desc"));
     console.log("[ACTION_LOG] fetchPatients: Created query. Attempting getDocs...");
 
@@ -84,8 +86,8 @@ export async function fetchPatients(): Promise<{ data?: PatientListItem[], error
         email: data.email || "N/A",
         address: data.address || "N/A",
         mobilityStatus: data.mobilityStatus || "N/A",
-        pathologies: Array.isArray(data.pathologies) ? data.pathologies : [],
-        allergies: Array.isArray(data.allergies) ? data.allergies : [],
+        pathologies: Array.isArray(data.pathologies) ? data.pathologies : (typeof data.pathologies === 'string' ? data.pathologies.split(',').map(p => p.trim()) : []),
+        allergies: Array.isArray(data.allergies) ? data.allergies : (typeof data.allergies === 'string' ? data.allergies.split(',').map(a => a.trim()) : []),
         lastVisit: data.lastVisit instanceof Timestamp ? data.lastVisit.toDate().toISOString().split('T')[0] : data.lastVisit || new Date().toISOString().split('T')[0],
         condition: data.condition || "N/A",
         status: data.status || "N/A",
@@ -115,11 +117,16 @@ export async function fetchPatientById(id: string): Promise<{ data?: PatientList
     if (patientDoc.exists()) {
       const data = patientDoc.data();
       console.log("[ACTION_LOG] fetchPatientById: Document exists. Mapping data.");
+      const pathologiesArray = Array.isArray(data.pathologies) ? data.pathologies : (typeof data.pathologies === 'string' ? data.pathologies.split(',').map(p => p.trim()) : []);
+      const allergiesArray = Array.isArray(data.allergies) ? data.allergies : (typeof data.allergies === 'string' ? data.allergies.split(',').map(a => a.trim()) : []);
+      
       const patientData = {
         id: patientDoc.id,
         ...data,
         joinDate: data.joinDate instanceof Timestamp ? data.joinDate.toDate().toISOString().split('T')[0] : data.joinDate,
         lastVisit: data.lastVisit instanceof Timestamp ? data.lastVisit.toDate().toISOString().split('T')[0] : data.lastVisit,
+        pathologies: pathologiesArray,
+        allergies: allergiesArray,
         currentMedications: data.currentMedications || [
             { name: "Lisinopril", dosage: "10mg daily" },
             { name: "Metformin", dosage: "500mg twice daily" },
@@ -151,8 +158,8 @@ const AddPatientInputSchema = z.object({
   email: z.string().email(),
   address: z.string().min(5),
   mobilityStatus: z.string().min(3),
-  pathologies: z.string().min(3), // Comma-separated string
-  allergies: z.string().optional(), // Comma-separated string
+  pathologies: z.string().min(3), 
+  allergies: z.string().optional(), 
 });
 export type AddPatientFormValues = z.infer<typeof AddPatientInputSchema>  & { avatarUrl?: string };
 
@@ -177,7 +184,6 @@ export async function addPatient(
       console.log("[ACTION_LOG] addPatient: No avatar file provided. Using placeholder.");
     }
 
-    const randomPassword = generateRandomPassword();
     const newPatientData = {
       name: validatedValues.fullName,
       age: validatedValues.age,
@@ -191,18 +197,19 @@ export async function addPatient(
       mobilityStatus: validatedValues.mobilityStatus,
       pathologies: validatedValues.pathologies.split(',').map(p => p.trim()).filter(p => p.length > 0),
       allergies: validatedValues.allergies ? validatedValues.allergies.split(',').map(a => a.trim()).filter(a => a.length > 0) : [],
-      lastVisit: Timestamp.fromDate(new Date()), // Default to now
-      condition: validatedValues.pathologies.split(',')[0]?.trim() || 'N/A', // Default condition
-      status: 'Stable', // Default status
+      lastVisit: Timestamp.fromDate(new Date()), 
+      condition: validatedValues.pathologies.split(',')[0]?.trim() || 'N/A', 
+      status: 'Stable', 
       createdAt: serverTimestamp(),
     };
 
     console.log("[ACTION_LOG] addPatient: Attempting to add document to Firestore.");
     const docRef = await addDoc(collection(db, "patients"), newPatientData);
     console.log("[ACTION_LOG] addPatient: Patient added to Firestore with ID: ", docRef.id);
-
-    console.log(`[ACTION_LOG] addPatient: Simulating email to ${validatedValues.email} with password: ${randomPassword}`);
-    console.log(`[ACTION_LOG] addPatient: Admin_Notification: New patient ${validatedValues.fullName} added with ID ${docRef.id}.`);
+    
+    // const randomPassword = generateRandomPassword();
+    // console.log(`[ACTION_LOG] addPatient: Simulating email to ${validatedValues.email} with password: ${randomPassword}`);
+    // console.log(`[ACTION_LOG] addPatient: Admin_Notification: New patient ${validatedValues.fullName} added with ID ${docRef.id}.`);
 
     return { success: true, message: `Patient ${validatedValues.fullName} added successfully.`, patientId: docRef.id };
   } catch (error: any) {
@@ -292,7 +299,6 @@ export async function addNurse(
       console.log("[ACTION_LOG] addNurse: No avatar file provided. Using placeholder.");
     }
 
-    const randomPassword = generateRandomPassword();
     const newNurseData = {
       name: validatedValues.fullName,
       email: validatedValues.email,
@@ -301,7 +307,7 @@ export async function addNurse(
       phone: validatedValues.phone,
       avatar: avatarUrlToStore,
       hint: hint,
-      status: 'Available' as const, // Default status
+      status: 'Available' as const, 
       createdAt: serverTimestamp(),
     };
 
@@ -309,8 +315,9 @@ export async function addNurse(
     const docRef = await addDoc(collection(db, "nurses"), newNurseData);
     console.log("[ACTION_LOG] addNurse: Nurse added to Firestore with ID: ", docRef.id);
 
-    console.log(`[ACTION_LOG] addNurse: Simulating email to ${validatedValues.email} with password: ${randomPassword}`);
-    console.log(`[ACTION_LOG] addNurse: Admin_Notification: New nurse ${validatedValues.fullName} added with ID ${docRef.id}.`);
+    // const randomPassword = generateRandomPassword();
+    // console.log(`[ACTION_LOG] addNurse: Simulating email to ${validatedValues.email} with password: ${randomPassword}`);
+    // console.log(`[ACTION_LOG] addNurse: Admin_Notification: New nurse ${validatedValues.fullName} added with ID ${docRef.id}.`);
 
     return { success: true, message: `Nurse ${validatedValues.fullName} added successfully.`, nurseId: docRef.id };
   } catch (error: any)
@@ -352,32 +359,29 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
     console.log("[ACTION_LOG] fetchDashboardStats: Getting counts for patients, nurses, consults.");
     const [
       patientCountSnapshot,
-      nursesSnapshot,
-      videoConsultsSnapshot
+      nursesSnapshot, // Fetches all nurse docs to count available
+      videoConsultsSnapshot // Fetches all consults for aggregation
     ] = await Promise.all([
       getCountFromServer(patientsCollectionRef),
-      getDocs(query(nursesCollectionRef)), // Fetches all nurse docs to count available
-      getDocs(query(videoConsultsCollectionRef)) // Fetches all consults for aggregation
+      getDocs(query(nursesCollectionRef)), 
+      getDocs(query(videoConsultsCollectionRef)) 
     ]);
     console.log("[ACTION_LOG] fetchDashboardStats: Counts received.");
 
     const activePatients = patientCountSnapshot.data().count;
-
-    // Correctly count available nurses from the fetched documents
     const availableNurses = nursesSnapshot.docs.filter(doc => doc.data().status === 'Available').length;
 
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const todayStartTimestamp = Timestamp.fromDate(todayStart);
-
+    
     let upcomingAppointments = 0;
     let upcomingAppointmentsTodayCount = 0;
     const statusCounts: { [key: string]: number } = { scheduled: 0, completed: 0, cancelled: 0 };
     const nursePerformance: { [nurseName: string]: number } = {};
 
-    videoConsultsSnapshot.docs.forEach(doc => {
-      const consultData = doc.data();
-      const consultTime = consultData.consultationTime as Timestamp; // Assume it's a Firestore Timestamp
+    videoConsultsSnapshot.docs.forEach(docSnap => {
+      const consultData = docSnap.data();
+      const consultTime = consultData.consultationTime as Timestamp; 
 
       if (consultData.status === 'scheduled' && consultTime.toDate() >= todayStart) {
         upcomingAppointments++;
@@ -385,41 +389,30 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
           upcomingAppointmentsTodayCount++;
         }
       }
-
-      // Ensure status is a known key or initialize
       const status = consultData.status as string;
-      if (statusCounts.hasOwnProperty(status)) {
-        statusCounts[status]++;
-      } else {
-        statusCounts[status] = 1; // Initialize if status not seen before
-      }
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
 
-
-      // Aggregate nurse performance by name
-      const nurseName = consultData.nurseName as string; // Assume nurseName field exists
+      const nurseName = consultData.nurseName as string; 
       if (nurseName) {
         nursePerformance[nurseName] = (nursePerformance[nurseName] || 0) + 1;
       }
     });
     console.log("[ACTION_LOG] fetchDashboardStats: Consults processed.");
 
-    // Mock data for some fields, as deriving them accurately might be complex
     const activePatientsChange = activePatients > 0 ? `+${Math.floor(Math.random()*5 + 1)} since last week` : "N/A";
-    const availableNursesOnline = availableNurses > 0 ? `Online: ${Math.floor(Math.random()*availableNurses + 1)}` : "Online: 0";
-    const careQualityScore = `${Math.floor(Math.random() * 10 + 88)}%`; // e.g., 88-97%
+    const availableNursesOnline = availableNurses > 0 ? `Online: ${Math.max(1,Math.floor(Math.random()*availableNurses))}` : "Online: 0";
+    const careQualityScore = `${Math.floor(Math.random() * 10 + 88)}%`; 
     const careQualityScoreTrend = `Up by ${Math.floor(Math.random()*3+1)}% from last month`;
 
     console.log("[ACTION_LOG] fetchDashboardStats: Processing patient registrations data.");
-    // For patientRegistrationsData, we need to fetch actual patient records
     const patientsSnapshotForChart = await getDocs(query(patientsCollectionRef, orderBy("createdAt", "asc")));
-    const monthlyRegistrations: { [key: string]: number } = {}; // Key: "YYYY-MM"
+    const monthlyRegistrations: { [key: string]: number } = {}; 
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
     patientsSnapshotForChart.docs.forEach(docSnap => {
       const data = docSnap.data();
       if (data.createdAt instanceof Timestamp) {
         const date = data.createdAt.toDate();
-        // Format: "MMM 'YY" (e.g., "Jul '24") to ensure uniqueness across years
         const displayMonth = `${monthNames[date.getMonth()]} '${String(date.getFullYear()).slice(-2)}`;
         monthlyRegistrations[displayMonth] = (monthlyRegistrations[displayMonth] || 0) + 1;
       }
@@ -427,24 +420,22 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
 
     const patientRegistrationsData: PatientRegistrationDataPoint[] = [];
     const currentJsDate = new Date();
-    for (let i = 5; i >= 0; i--) { // Last 6 months including current
+    for (let i = 5; i >= 0; i--) { 
         const d = new Date(currentJsDate.getFullYear(), currentJsDate.getMonth() - i, 1);
         const displayMonthKey = `${monthNames[d.getMonth()]} '${String(d.getFullYear()).slice(-2)}`;
         patientRegistrationsData.push({
-            month: monthNames[d.getMonth()], // Keep it short for X-axis label
+            month: monthNames[d.getMonth()], 
             newPatients: monthlyRegistrations[displayMonthKey] || 0,
         });
     }
     console.log("[ACTION_LOG] fetchDashboardStats: Patient registrations processed.");
 
-    // Appointment Status Data from aggregated statusCounts
     const appointmentStatusData: AppointmentStatusDataPoint[] = [
-      { status: "Completed", count: statusCounts.completed || 0, fill: "var(--color-completed)" },
-      { status: "Scheduled", count: statusCounts.scheduled || 0, fill: "var(--color-scheduled)" },
-      { status: "Cancelled", count: statusCounts.cancelled || 0, fill: "var(--color-cancelled)" },
-    ];
+      { status: "Completed", count: statusCounts.completed || 0, fill: "hsl(var(--chart-1))" },
+      { status: "Scheduled", count: statusCounts.scheduled || 0, fill: "hsl(var(--chart-2))" },
+      { status: "Cancelled", count: statusCounts.cancelled || 0, fill: "hsl(var(--destructive))" },
+    ].filter(item => item.count > 0); // Only include statuses with counts
 
-    // Nurse Performance Data
     const nurseColors = ["hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))", "hsl(var(--chart-1))", "hsl(var(--chart-2))"];
     const nursePerformanceData: NursePerformanceDataPoint[] = Object.entries(nursePerformance)
       .map(([name, count], index) => ({
@@ -452,8 +443,8 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
         consults: count,
         fill: nurseColors[index % nurseColors.length]
       }))
-      .sort((a, b) => b.consults - a.consults) // Sort by most consults
-      .slice(0, 5); // Top 5
+      .sort((a, b) => b.consults - a.consults) 
+      .slice(0, 5); 
     console.log("[ACTION_LOG] fetchDashboardStats: Nurse performance processed.");
 
     const stats: DashboardStats = {
@@ -473,10 +464,9 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
     return { data: stats };
   } catch (error: any) {
     console.error("[ACTION_ERROR] fetchDashboardStats: Error fetching dashboard stats from Firestore:", error.code, error.message, error);
-    // Return default/empty stats on error to prevent breaking the dashboard UI
     return {
       error: `Could not load dashboard statistics: ${error.message}`,
-      data: { // Provide default empty structure
+      data: { 
         activePatients: 0, activePatientsChange: "N/A",
         upcomingAppointments: 0, upcomingAppointmentsToday: "N/A",
         availableNurses: 0, availableNursesOnline: "N/A",
@@ -508,7 +498,6 @@ const ScheduleVideoConsultInputSchema = z.object({
   nurseId: z.string().min(1),
   consultationDateTime: z.date(),
 });
-// This type is for server-side use if needed, client-side uses the one above.
 export type ScheduleVideoConsultFormServerValues = z.infer<typeof ScheduleVideoConsultInputSchema>;
 
 export async function scheduleVideoConsult(
@@ -518,7 +507,6 @@ export async function scheduleVideoConsult(
   try {
     const validatedValues = ScheduleVideoConsultInputSchema.parse(values);
 
-    // Fetch patient and nurse details from Firestore to get their names
     const patientDocRef = doc(db, "patients", validatedValues.patientId);
     const nurseDocRef = doc(db, "nurses", validatedValues.nurseId);
 
@@ -538,33 +526,28 @@ export async function scheduleVideoConsult(
     }
     console.log("[ACTION_LOG] scheduleVideoConsult: Patient and nurse documents fetched.");
 
-    const patient = patientDocSnap.data() as Omit<PatientListItem, 'id'>; // Assuming structure
-    const nurse = nurseDocSnap.data() as Omit<NurseListItem, 'id'>; // Assuming structure
+    const patient = patientDocSnap.data() as Omit<PatientListItem, 'id'>; 
+    const nurse = nurseDocSnap.data() as Omit<NurseListItem, 'id'>; 
 
-    // Generate Daily.co room URL
-    // Use environment variable for base URL, fallback to a placeholder
     const dailyCoBaseUrl = process.env.NEXT_PUBLIC_DAILY_CO_BASE_URL;
     if (!dailyCoBaseUrl || dailyCoBaseUrl.includes("YOUR_DAILY_CO_DOMAIN.daily.co") || dailyCoBaseUrl === "https://example.daily.co/") {
-        console.warn("[ACTION_WARN] scheduleVideoConsult: NEXT_PUBLIC_DAILY_CO_BASE_URL is not set correctly. Using fallback.");
-        // It's better to throw an error or return failure if not configured
-        // return { success: false, message: "Daily.co base URL is not configured. Please set NEXT_PUBLIC_DAILY_CO_BASE_URL in .env" };
+        console.warn("[ACTION_WARN] scheduleVideoConsult: NEXT_PUBLIC_DAILY_CO_BASE_URL is not set or uses placeholder. Using default fallback: https://sanhome.daily.co/");
     }
     const roomName = `sanhome-consult-${generateRandomString(8)}`;
-    // Ensure base URL ends with a slash if it doesn't already
     const effectiveDailyCoBaseUrl = dailyCoBaseUrl && !dailyCoBaseUrl.includes("YOUR_DAILY_CO_DOMAIN.daily.co") && dailyCoBaseUrl !== "https://example.daily.co/"
                                      ? dailyCoBaseUrl
-                                     : "https://sanhome.daily.co/"; // Default fallback
+                                     : "https://sanhome.daily.co/"; 
     const dailyRoomUrl = `${effectiveDailyCoBaseUrl.endsWith('/') ? effectiveDailyCoBaseUrl : effectiveDailyCoBaseUrl + '/'}${roomName}`;
     console.log("[ACTION_LOG] scheduleVideoConsult: Generated Daily room URL:", dailyRoomUrl);
 
     const newVideoConsultData = {
       patientId: validatedValues.patientId,
-      patientName: patient.name, // Get from fetched patient doc
+      patientName: patient.name, 
       nurseId: validatedValues.nurseId,
-      nurseName: nurse.name, // Get from fetched nurse doc
+      nurseName: nurse.name, 
       consultationTime: Timestamp.fromDate(validatedValues.consultationDateTime),
       dailyRoomUrl: dailyRoomUrl,
-      status: 'scheduled' as const, // Default status
+      status: 'scheduled' as const, 
       createdAt: serverTimestamp(),
     };
 
@@ -572,9 +555,8 @@ export async function scheduleVideoConsult(
     const docRef = await addDoc(collection(db, "videoConsults"), newVideoConsultData);
     console.log("[ACTION_LOG] scheduleVideoConsult: Video consult added to Firestore with ID:", docRef.id);
 
-    // Simulate notifications
-    console.log(`[ACTION_LOG] scheduleVideoConsult: Simulating email to Patient ${patient.name} (email: ${patient.email}): Video consult at ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}`);
-    console.log(`[ACTION_LOG] scheduleVideoConsult: Simulating email to Nurse ${nurse.name} (email: ${nurse.email}): Video consult with ${patient.name} at ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}`);
+    // console.log(`[ACTION_LOG] scheduleVideoConsult: Simulating email to Patient ${patient.name} (email: ${patient.email}): Video consult at ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}`);
+    // console.log(`[ACTION_LOG] scheduleVideoConsult: Simulating email to Nurse ${nurse.name} (email: ${nurse.email}): Video consult with ${patient.name} at ${validatedValues.consultationDateTime.toLocaleString()}. Link: ${dailyRoomUrl}`);
 
     return {
       success: true,
@@ -596,7 +578,7 @@ export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListIte
   console.log("[ACTION_LOG] fetchVideoConsults: Initiated.");
   try {
     const consultsCollectionRef = collection(db, "videoConsults");
-    const q = query(consultsCollectionRef, orderBy("consultationTime", "desc")); // Order by consultation time
+    const q = query(consultsCollectionRef, orderBy("consultationTime", "desc")); 
     console.log("[ACTION_LOG] fetchVideoConsults: Created query. Attempting getDocs...");
     const consultsSnapshot = await getDocs(q);
     console.log(`[ACTION_LOG] fetchVideoConsults: Firestore getDocs successful. Found ${consultsSnapshot.docs.length} documents.`);
@@ -624,34 +606,56 @@ export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListIte
 }
 
 // --- Database Seeding ---
+// Sample data arrays for realistic user generation
+const firstNames = [
+  "Foulen", "Amina", "Mohamed", "Fatma", "Ali", "Sarah", "Youssef", "Hiba", "Ahmed", "Nour",
+  "Khaled", "Lina", "Omar", "Zahra", "Hassan", "Mariem", "Ibrahim", "Sana", "Tarek", "Leila"
+];
+const lastNames = [
+  "Ben Foulen", "Trabelsi", "Jlassi", "Gharbi", "Mabrouk", "Saidi", "Baccouche", "Hammami",
+  "Chakroun", "Ben Ammar", "Dridi", "Sassi", "Kooli", "Mansouri", "Ayari", "Feki", "Belhadj",
+  "Khemiri", "Zouari", "Gargouri"
+];
+const tunisianRoles = ["sage-femme", "patient", "infirmiere", "medecin", "aide-soignant", "kinesitherapeute"]; // Renamed to avoid conflict
+const addresses = [
+  "Avenue Habib Bourguiba, Tunis", "Rue de la Liberté, Sfax", "Boulevard 7 Novembre, Sousse",
+  "Rue Farhat Hached, Ariana", "Avenue Taieb Mhiri, Nabeul", "Rue de Carthage, Bizerte",
+  "Avenue de la République, Monastir", "Rue Jamel Abdennasser, Kairouan",
+  "Avenue Mohamed V, Gabès", "Rue Ibn Khaldoun, Gafsa", "Avenue Ali Belhouane, Mahdia",
+  "Rue 18 Janvier, Djerba", "Avenue Hédi Chaker, Kasserine",
+  "Rue de l'Indépendance, Sidi Bouzid", "Avenue de l'Environnement, Tozeur"
+];
+const genders = ["homme", "femme"];
+
+
 const mockTunisianPatients = [
   {
-    name: "Ahmed Ben Salah", age: 68, primaryNurse: "Leila Haddad", // Will be dynamically assigned
-    phone: "+216 22 123 456", email: "ahmed.bensalah@example.com", address: "15 Rue de la Kasbah, Tunis",
+    name: "Ahmed Ben Salah", age: 68, 
+    phone: "+216 22123456", email: "ahmed.bensalah@example.com", address: "15 Rue de la Kasbah, Tunis",
     mobilityStatus: "Ambulatoire avec canne", pathologies: ["Diabète", "Hypertension"], allergies: ["Pénicilline"],
     lastVisitDate: "2024-07-15", condition: "Diabète de type 2", status: "Stable", hint: "elderly man tunisian"
   },
   {
-    name: "Fatima Bouaziz", age: 75, primaryNurse: "Karim Zayani",
-    phone: "+216 98 765 432", email: "fatima.bouaziz@example.com", address: "Avenue Habib Bourguiba, Sousse",
+    name: "Fatima Bouaziz", age: 75, 
+    phone: "+216 98765432", email: "fatima.bouaziz@example.com", address: "Avenue Habib Bourguiba, Sousse",
     mobilityStatus: "Fauteuil roulant", pathologies: ["Arthrose", "Problèmes cardiaques"], allergies: ["Aspirine"],
     lastVisitDate: "2024-07-20", condition: "Arthrose sévère", status: "Needs Follow-up", hint: "elderly woman tunisian"
   },
   {
-    name: "Mohamed Cherif", age: 55, primaryNurse: "Rania Chebbi",
-    phone: "+216 55 555 555", email: "mohamed.cherif@example.com", address: "Cité El Ghazela, Ariana",
+    name: "Mohamed Cherif", age: 55, 
+    phone: "+216 55555555", email: "mohamed.cherif@example.com", address: "Cité El Ghazela, Ariana",
     mobilityStatus: "Ambulatoire", pathologies: ["Asthme"], allergies: [],
     lastVisitDate: "2024-07-01", condition: "Asthme chronique", status: "Improving", hint: "man tunisian"
   },
   {
-    name: "Aisha Khelifi", age: 62, primaryNurse: "Hassen Marzouk",
-    phone: "+216 23 456 789", email: "aisha.khelifi@example.com", address: "Route de Gremda, Sfax",
+    name: "Aisha Khelifi", age: 62, 
+    phone: "+216 23456789", email: "aisha.khelifi@example.com", address: "Route de Gremda, Sfax",
     mobilityStatus: "Mobilité réduite", pathologies: ["Hypertension"], allergies: ["Fruits de mer"],
     lastVisitDate: "2024-06-25", condition: "Hypertension", status: "Stable", hint: "woman tunisian"
   },
   {
-    name: "Youssef Trabelsi", age: 70, primaryNurse: "Sami Ben Ammar",
-    phone: "+216 99 888 777", email: "youssef.trabelsi@example.com", address: "La Marsa, Tunis",
+    name: "Youssef Trabelsi", age: 70, 
+    phone: "+216 99888777", email: "youssef.trabelsi@example.com", address: "La Marsa, Tunis",
     mobilityStatus: "Alité", pathologies: ["Problèmes cardiaques", "Diabète"], allergies: [],
     lastVisitDate: "2024-07-22", condition: "Insuffisance cardiaque", status: "Needs Follow-up", hint: "elderly man tunisian"
   }
@@ -660,58 +664,127 @@ const mockTunisianPatients = [
 const mockTunisianNurses = [
   {
     name: "Leila Haddad", specialty: "Gériatrie", location: "Clinique El Amen, Tunis",
-    phone: "+216 71 111 222", email: "leila.haddad@sanhome.com", status: "Available", hint: "nurse woman tunisian"
+    phone: "+216 71111222", email: "leila.haddad@sanhome.com", status: "Available", hint: "nurse woman tunisian"
   },
   {
     name: "Karim Zayani", specialty: "Soins généraux", location: "Hôpital Sahloul, Sousse",
-    phone: "+216 73 333 444", email: "karim.zayani@sanhome.com", status: "On Duty", hint: "nurse man tunisian"
+    phone: "+216 73333444", email: "karim.zayani@sanhome.com", status: "On Duty", hint: "nurse man tunisian"
   },
   {
     name: "Rania Chebbi", specialty: "Pédiatrie", location: "Clinique Ezzahra, Sfax",
-    phone: "+216 74 555 666", email: "rania.chebbi@sanhome.com", status: "Available", hint: "nurse woman tunisian"
+    phone: "+216 74555666", email: "rania.chebbi@sanhome.com", status: "Available", hint: "nurse woman tunisian"
   },
   {
     name: "Hassen Marzouk", specialty: "Cardiologie", location: "Hôpital Fattouma Bourguiba, Monastir",
-    phone: "+216 73 777 888", email: "hassen.marzouk@sanhome.com", status: "Unavailable", hint: "nurse man tunisian"
+    phone: "+216 73777888", email: "hassen.marzouk@sanhome.com", status: "Unavailable", hint: "nurse man tunisian"
   },
   {
     name: "Sami Ben Ammar", specialty: "Soins à domicile", location: "Service Mobile, Grand Tunis",
-    phone: "+216 71 999 000", email: "sami.benammar@sanhome.com", status: "Available", hint: "nurse man tunisian"
+    phone: "+216 71999000", email: "sami.benammar@sanhome.com", status: "Available", hint: "nurse man tunisian"
   }
 ];
 
 export async function seedDatabase(): Promise<{ success: boolean; message: string; details?: Record<string, string> }> {
   console.log("[ACTION_LOG] seedDatabase: Initiated.");
-  const results: Record<string, string> = {};
+  const results: Record<string, string> = { users: "", patients: "", nurses: "", videoConsults: "" };
+  let allSuccess = true;
   const patientRefs: { id: string; name: string, email: string }[] = [];
   const nurseRefs: { id: string; name: string, email: string }[] = [];
+  const userRefs: { uid: string, name: string, email: string }[] = [];
 
   try {
+    // Seed Users
+    const usersCollectionRef = collection(db, "users");
+    const currentUsersSnapshot = await getDocs(query(usersCollectionRef, limit(1)));
+    if (currentUsersSnapshot.empty) {
+      console.log("[ACTION_LOG] seedDatabase: 'users' collection is empty. Seeding users...");
+      const sampleAuthUsers = Array.from({ length: 10 }, (_, index) => ({ // Reduced to 10 for quicker seeding
+        email: `user${index + 1}@sanhome.com`, // More specific domain
+        password: "Password123!",
+        firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
+        lastName: lastNames[Math.floor(Math.random() * lastNames.length)],
+        role: tunisianRoles[Math.floor(Math.random() * tunisianRoles.length)],
+        phoneNumber: generatePhoneNumber(),
+        address: addresses[Math.floor(Math.random() * addresses.length)],
+        dateOfBirth: generateDateOfBirth(),
+        gender: genders[Math.floor(Math.random() * genders.length)],
+      }));
+
+      let seededUsersCount = 0;
+      for (const userData of sampleAuthUsers) {
+        try {
+          const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
+          const user = userCredential.user;
+          const userProfile = {
+            // id field is not needed here as doc ID is user.uid
+            email: userData.email,
+            firstName: userData.firstName,
+            lastName: userData.lastName,
+            role: userData.role,
+            phoneNumber: userData.phoneNumber,
+            address: userData.address,
+            dateOfBirth: Timestamp.fromDate(new Date(userData.dateOfBirth)),
+            gender: userData.gender,
+            createdAt: serverTimestamp(),
+          };
+          await setDoc(doc(db, "users", user.uid), userProfile);
+          userRefs.push({ uid: user.uid, name: `${userData.firstName} ${userData.lastName}`, email: userData.email });
+          seededUsersCount++;
+          console.log(`[ACTION_LOG] Seeded user in Auth & Firestore: ${userData.email} with UID ${user.uid}`);
+        } catch (e: any) {
+          console.error(`[ACTION_ERROR] Failed to seed user ${userData.email}:`, e.message, e.code);
+          results.users += `Error for ${userData.email}: ${e.message}. `;
+          allSuccess = false;
+        }
+      }
+      results.users = results.users || `Seeded ${seededUsersCount} users.`;
+    } else {
+      results.users = "Users collection is not empty. Skipping seeding users.";
+      const existingUsers = await getDocs(usersCollectionRef);
+      existingUsers.forEach(docSnap => {
+        const data = docSnap.data();
+        userRefs.push({ uid: docSnap.id, name: `${data.firstName} ${data.lastName}`, email: data.email });
+      });
+    }
+
+
     // Seed Patients
     const patientsCollectionRef = collection(db, "patients");
     const currentPatientsSnapshot = await getDocs(query(patientsCollectionRef, limit(1)));
     if (currentPatientsSnapshot.empty) {
+      console.log("[ACTION_LOG] seedDatabase: 'patients' collection is empty. Seeding patients...");
+      let seededPatientsCount = 0;
       for (const patientData of mockTunisianPatients) {
-        const { lastVisitDate, primaryNurse, ...restData } = patientData;
-        const newPatient = {
-          ...restData,
-          primaryNurse: "To be assigned", // Placeholder, will be updated if nurses are seeded
-          avatarUrl: `https://placehold.co/100x100.png?text=${patientData.name.split(" ").map(n=>n[0]).join("")}`,
-          joinDate: Timestamp.fromDate(new Date(Date.now() - Math.floor(Math.random() * 365 * 24 * 60 * 60 * 1000))),
-          lastVisit: Timestamp.fromDate(new Date(lastVisitDate)),
-          createdAt: serverTimestamp(),
-        };
-        const docRef = await addDoc(patientsCollectionRef, newPatient);
-        patientRefs.push({ id: docRef.id, name: newPatient.name, email: newPatient.email });
-        console.log(`[ACTION_LOG] Seeded patient: ${newPatient.name} with ID ${docRef.id}`);
+        try {
+          const { lastVisitDate, ...restData } = patientData;
+          const randomNurseName = nurseRefs.length > 0 ? nurseRefs[Math.floor(Math.random() * nurseRefs.length)].name : "Nurse Not Assigned";
+          const newPatient = {
+            ...restData,
+            primaryNurse: randomNurseName,
+            avatarUrl: `https://placehold.co/100x100.png?text=${patientData.name.split(" ").map(n=>n[0]).join("")}`,
+            joinDate: Timestamp.fromDate(new Date(Date.now() - Math.floor(Math.random() * 365 * 24 * 60 * 60 * 1000))),
+            lastVisit: Timestamp.fromDate(new Date(lastVisitDate)),
+            pathologies: patientData.pathologies, // Ensure it's an array
+            allergies: patientData.allergies, // Ensure it's an array
+            createdAt: serverTimestamp(),
+          };
+          const docRef = await addDoc(patientsCollectionRef, newPatient);
+          patientRefs.push({ id: docRef.id, name: newPatient.name, email: newPatient.email });
+          seededPatientsCount++;
+          console.log(`[ACTION_LOG] Seeded patient: ${newPatient.name} with ID ${docRef.id}`);
+        } catch (e: any) {
+          console.error(`[ACTION_ERROR] Failed to seed patient ${patientData.name}:`, e.message, e.code);
+          results.patients += `Error for ${patientData.name}: ${e.message}. `;
+          allSuccess = false;
+        }
       }
-      results.patients = `Seeded ${mockTunisianPatients.length} patients.`;
+      results.patients = results.patients || `Seeded ${seededPatientsCount} patients.`;
     } else {
       results.patients = "Patients collection is not empty. Skipping seeding patients.";
       const existingPatients = await getDocs(patientsCollectionRef);
-      existingPatients.forEach(doc => {
-        const data = doc.data();
-        patientRefs.push({ id: doc.id, name: data.name, email: data.email });
+      existingPatients.forEach(docSnap => {
+        const data = docSnap.data();
+        patientRefs.push({ id: docSnap.id, name: data.name, email: data.email });
       });
     }
 
@@ -719,90 +792,115 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     const nursesCollectionRef = collection(db, "nurses");
     const currentNursesSnapshot = await getDocs(query(nursesCollectionRef, limit(1)));
     if (currentNursesSnapshot.empty) {
+      console.log("[ACTION_LOG] seedDatabase: 'nurses' collection is empty. Seeding nurses...");
+      let seededNursesCount = 0;
       for (const nurseData of mockTunisianNurses) {
-        const newNurse = {
-          ...nurseData,
-          avatar: `https://placehold.co/100x100.png?text=${nurseData.name.split(" ").map(n=>n[0]).join("")}`,
-          createdAt: serverTimestamp(),
-        };
-        const docRef = await addDoc(nursesCollectionRef, newNurse);
-        nurseRefs.push({ id: docRef.id, name: newNurse.name, email: newNurse.email });
-        console.log(`[ACTION_LOG] Seeded nurse: ${newNurse.name} with ID ${docRef.id}`);
+        try {
+          const newNurse = {
+            ...nurseData,
+            avatar: `https://placehold.co/100x100.png?text=${nurseData.name.split(" ").map(n=>n[0]).join("")}`,
+            createdAt: serverTimestamp(),
+          };
+          const docRef = await addDoc(nursesCollectionRef, newNurse);
+          nurseRefs.push({ id: docRef.id, name: newNurse.name, email: newNurse.email });
+          seededNursesCount++;
+          console.log(`[ACTION_LOG] Seeded nurse: ${newNurse.name} with ID ${docRef.id}`);
+        } catch (e: any) {
+          console.error(`[ACTION_ERROR] Failed to seed nurse ${nurseData.name}:`, e.message, e.code);
+          results.nurses += `Error for ${nurseData.name}: ${e.message}. `;
+          allSuccess = false;
+        }
       }
-      results.nurses = `Seeded ${mockTunisianNurses.length} nurses.`;
+      results.nurses = results.nurses || `Seeded ${seededNursesCount} nurses.`;
     } else {
       results.nurses = "Nurses collection is not empty. Skipping seeding nurses.";
       const existingNurses = await getDocs(nursesCollectionRef);
-      existingNurses.forEach(doc => {
-        const data = doc.data();
-        nurseRefs.push({ id: doc.id, name: data.name, email: data.email });
+      existingNurses.forEach(docSnap => {
+        const data = docSnap.data();
+        nurseRefs.push({ id: docSnap.id, name: data.name, email: data.email });
       });
     }
-
-    // Assign primary nurses to patients if both were seeded/exist
-    if (patientRefs.length > 0 && nurseRefs.length > 0) {
+    
+    // Re-assign primary nurses to patients now that nurseRefs is populated
+    if (patientRefs.length > 0 && nurseRefs.length > 0 && currentPatientsSnapshot.empty && currentNursesSnapshot.empty) {
+        console.log("[ACTION_LOG] seedDatabase: Re-assigning primary nurses to newly seeded patients.");
         const batch = writeBatch(db);
         for (const patientRef of patientRefs) {
-            const randomNurse = nurseRefs[Math.floor(Math.random() * nurseRefs.length)];
-            const patientDocRefToUpdate = doc(db, "patients", patientRef.id);
-            batch.update(patientDocRefToUpdate, { primaryNurse: randomNurse.name });
+            const patientDoc = await getDoc(doc(db, "patients", patientRef.id));
+            if (patientDoc.exists() && patientDoc.data().primaryNurse === "Nurse Not Assigned") { // Only update if it was a placeholder
+                const randomNurse = nurseRefs[Math.floor(Math.random() * nurseRefs.length)];
+                const patientDocRefToUpdate = doc(db, "patients", patientRef.id);
+                batch.update(patientDocRefToUpdate, { primaryNurse: randomNurse.name });
+            }
         }
         await batch.commit();
-        console.log("[ACTION_LOG] Assigned primary nurses to patients.");
+        console.log("[ACTION_LOG] seedDatabase: Finished re-assigning primary nurses.");
     }
 
 
-    // Seed Video Consultations (only if we have patients and nurses)
-    if (patientRefs.length > 0 && nurseRefs.length > 0) {
-      const videoConsultsCollectionRef = collection(db, "videoConsults");
-      const currentConsultsSnapshot = await getDocs(query(videoConsultsCollectionRef, limit(1)));
-      let seededConsultsCount = 0;
-      if (currentConsultsSnapshot.empty) {
+    // Seed Video Consultations
+    const videoConsultsCollectionRef = collection(db, "videoConsults");
+    const currentConsultsSnapshot = await getDocs(query(videoConsultsCollectionRef, limit(1)));
+    if (currentConsultsSnapshot.empty) {
+      console.log("[ACTION_LOG] seedDatabase: 'videoConsults' collection is empty. Seeding video consults...");
+      if (patientRefs.length > 0 && nurseRefs.length > 0) {
+        let seededConsultsCount = 0;
         for (let i = 0; i < Math.min(5, patientRefs.length, nurseRefs.length); i++) {
-          const randomPatient = patientRefs[i % patientRefs.length]; // Cycle through patients
-          const randomNurse = nurseRefs[i % nurseRefs.length];   // Cycle through nurses
+          try {
+            const randomPatient = patientRefs[i % patientRefs.length]; 
+            const randomNurse = nurseRefs[i % nurseRefs.length];   
 
-          const consultDate = new Date();
-          consultDate.setDate(consultDate.getDate() + Math.floor(Math.random() * 30) - 15); // +/- 15 days
-          consultDate.setHours(Math.floor(Math.random() * 10) + 8, Math.random() > 0.5 ? 30 : 0, 0, 0); // 8 AM to 5:30 PM
+            const consultDate = new Date();
+            consultDate.setDate(consultDate.getDate() + Math.floor(Math.random() * 30) - 15); 
+            consultDate.setHours(Math.floor(Math.random() * 10) + 8, Math.random() > 0.5 ? 30 : 0, 0, 0); 
 
-          const statuses: VideoConsultListItem['status'][] = ['scheduled', 'completed', 'cancelled'];
-          const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
+            const statuses: VideoConsultListItem['status'][] = ['scheduled', 'completed', 'cancelled'];
+            const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
 
-          const roomName = `sanhome-consult-${generateRandomString(8)}`;
-          const dailyCoBaseUrl = process.env.NEXT_PUBLIC_DAILY_CO_BASE_URL || "https://sanhome.daily.co/";
-          const dailyRoomUrl = `${dailyCoBaseUrl.endsWith('/') ? dailyCoBaseUrl : dailyCoBaseUrl + '/'}${roomName}`;
+            const roomName = `sanhome-consult-${generateRandomString(8)}`;
+            const dailyCoBaseUrl = process.env.NEXT_PUBLIC_DAILY_CO_BASE_URL || "https://sanhome.daily.co/";
+            const dailyRoomUrl = `${dailyCoBaseUrl.endsWith('/') ? dailyCoBaseUrl : dailyCoBaseUrl + '/'}${roomName}`;
 
-          const newConsult = {
-            patientId: randomPatient.id,
-            patientName: randomPatient.name,
-            nurseId: randomNurse.id,
-            nurseName: randomNurse.name,
-            consultationTime: Timestamp.fromDate(consultDate),
-            dailyRoomUrl: dailyRoomUrl,
-            status: randomStatus,
-            createdAt: serverTimestamp(),
-          };
-          await addDoc(videoConsultsCollectionRef, newConsult);
-          seededConsultsCount++;
+            const newConsult = {
+              patientId: randomPatient.id,
+              patientName: randomPatient.name,
+              nurseId: randomNurse.id,
+              nurseName: randomNurse.name,
+              consultationTime: Timestamp.fromDate(consultDate),
+              dailyRoomUrl: dailyRoomUrl,
+              status: randomStatus,
+              createdAt: serverTimestamp(),
+            };
+            await addDoc(videoConsultsCollectionRef, newConsult);
+            seededConsultsCount++;
+          } catch (e: any) {
+            console.error(`[ACTION_ERROR] Failed to seed video consult ${i + 1}:`, e.message, e.code);
+            results.videoConsults += `Error for consult ${i+1}: ${e.message}. `;
+            allSuccess = false;
+          }
         }
-        results.videoConsults = `Seeded ${seededConsultsCount} video consultations.`;
+        results.videoConsults = results.videoConsults || `Seeded ${seededConsultsCount} video consultations.`;
         console.log(`[ACTION_LOG] Seeded ${seededConsultsCount} video consultations.`);
       } else {
-        results.videoConsults = "VideoConsults collection is not empty. Skipping seeding video consultations.";
+        results.videoConsults = "Skipped seeding video consultations as patients or nurses were not available/seeded during this run.";
       }
     } else {
-        results.videoConsults = "Skipped seeding video consultations as patients or nurses were not available/seeded.";
+      results.videoConsults = "VideoConsults collection is not empty. Skipping seeding video consultations.";
     }
 
     console.log("[ACTION_LOG] seedDatabase: Seeding process completed.");
-    return { success: true, message: "Database seeding process finished.", details: results };
+    if (allSuccess) {
+      return { success: true, message: "Database seeding process finished successfully.", details: results };
+    } else {
+      return { success: false, message: "Database seeding completed with some errors.", details: results };
+    }
 
   } catch (error: any) {
-    console.error("[ACTION_ERROR] seedDatabase: Error during seeding:", error);
-    return { success: false, message: `Database seeding failed: ${error.message}`, details: results };
+    console.error("[ACTION_ERROR] seedDatabase: Critical error during seeding process:", error.message, error.code, error);
+    return { success: false, message: `Database seeding failed critically: ${error.message}`, details: results };
   }
 }
     
+  
 
-      
+    

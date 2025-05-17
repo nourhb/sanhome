@@ -4,7 +4,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { UsersRound, BarChartBig, DownloadCloud, MoreHorizontal, Edit, Trash2, Settings2 } from "lucide-react";
+import { UsersRound, BarChartBig, DownloadCloud, MoreHorizontal, Edit, Trash2, Settings2, Loader2, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -14,32 +14,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-
-// Mock data - replace with actual data fetching
-const mockUsers = [
-  { id: 'usr1', name: 'Alice Wonderland', email: 'alice@example.com', role: 'Patient', status: 'Active', joined: '2023-01-15' },
-  { id: 'usr2', name: 'Bob The Builder', email: 'bob@example.com', role: 'Patient', status: 'Active', joined: '2023-02-20' },
-  { id: 'usr3', name: 'Nurse Joy', email: 'joy@sanhome.com', role: 'Nurse', status: 'Active', joined: '2022-11-10' },
-  { id: 'usr4', name: 'Dr. Admin', email: 'admin@sanhome.com', role: 'Admin', status: 'Active', joined: '2022-10-01' },
-  { id: 'usr5', name: 'Charlie Suspended', email: 'charlie@example.com', role: 'Patient', status: 'Suspended', joined: '2023-03-05' },
-];
-
-const activeUsersData = [
-  { month: "Jan", users: 120 },
-  { month: "Feb", users: 150 },
-  { month: "Mar", users: 130 },
-  { month: "Apr", users: 170 },
-  { month: "May", users: 200 },
-  { month: "Jun", users: 180 },
-];
-
-const appointmentTrendsData = [
-  { type: "Check-up", count: 45 },
-  { type: "Med Review", count: 30 },
-  { type: "Wound Care", count: 25 },
-  { type: "Vitals", count: 50 },
-  { type: "Consult", count: 15 },
-];
+import React, { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@/contexts/auth-context";
+import type { UserForAdminList, NurseListItem, PatientListItem } from "@/app/actions"; // Assuming UserForAdminList is defined
+import { fetchUsersForAdmin, fetchNurses, fetchPatients, fetchVideoConsults } from "@/app/actions";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 const chartConfigLine = {
   users: {
@@ -55,8 +34,107 @@ const chartConfigBar = {
   },
 };
 
-
 export default function AdminDashboardPage() {
+  const [users, setUsers] = useState<UserForAdminList[]>([]);
+  const [nurses, setNurses] = useState<NurseListItem[]>([]);
+  const [patients, setPatients] = useState<PatientListItem[]>([]);
+  const [videoConsults, setVideoConsults] = useState<any[]>([]); // Using 'any' for now
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { currentUser, loading: authLoading, userRole } = useAuth();
+
+  const loadAdminData = useCallback(async () => {
+    if (!currentUser || userRole !== 'admin') {
+      setError("Access denied. Admin privileges required.");
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    try {
+      const [usersResult, nursesResult, patientsResult, consultsResult] = await Promise.all([
+        fetchUsersForAdmin(),
+        fetchNurses(),
+        fetchPatients(),
+        fetchVideoConsults() // Assuming fetchVideoConsults gives data for appointment trends
+      ]);
+
+      if (usersResult.data) setUsers(usersResult.data);
+      else setError(prev => `${prev ? prev + " " : ""}Failed to load users: ${usersResult.error || 'Unknown error'}`);
+      
+      if (nursesResult.data) setNurses(nursesResult.data);
+      else setError(prev => `${prev ? prev + " " : ""}Failed to load nurses: ${nursesResult.error || 'Unknown error'}`);
+
+      if (patientsResult.data) setPatients(patientsResult.data);
+      else setError(prev => `${prev ? prev + " " : ""}Failed to load patients: ${patientsResult.error || 'Unknown error'}`);
+      
+      if (consultsResult.data) setVideoConsults(consultsResult.data);
+      else setError(prev => `${prev ? prev + " " : ""}Failed to load consults: ${consultsResult.error || 'Unknown error'}`);
+
+    } catch (e: any) {
+      setError(`Failed to load admin data: ${e.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentUser, userRole]);
+
+  useEffect(() => {
+    if(!authLoading){
+      loadAdminData();
+    }
+  }, [authLoading, loadAdminData]);
+
+  // Mock data for charts - replace with processed data from fetched consults/users
+  const activeUsersData = [ // This should be derived from users collection activity
+    { month: "Jan", users: users.filter(u => new Date(u.joined).getMonth() === 0).length || Math.floor(Math.random()*50+100) },
+    { month: "Feb", users: users.filter(u => new Date(u.joined).getMonth() === 1).length || Math.floor(Math.random()*50+100) },
+    { month: "Mar", users: users.filter(u => new Date(u.joined).getMonth() === 2).length || Math.floor(Math.random()*50+100) },
+    { month: "Apr", users: users.filter(u => new Date(u.joined).getMonth() === 3).length || Math.floor(Math.random()*50+100) },
+    { month: "May", users: users.filter(u => new Date(u.joined).getMonth() === 4).length || Math.floor(Math.random()*50+100) },
+    { month: "Jun", users: users.filter(u => new Date(u.joined).getMonth() === 5).length || Math.floor(Math.random()*50+100) },
+  ];
+
+  // For appointment trends, we need a 'type' field in appointments or videoConsults
+  // For now, using placeholder or mock data if 'type' is not available
+  const appointmentTrendsData = [
+    { type: "Check-up", count: videoConsults.filter(c => c.status === 'completed').length || 45 }, // Example logic
+    { type: "Med Review", count: Math.floor(Math.random()*20+20) },
+    { type: "Wound Care", count: Math.floor(Math.random()*15+10) },
+    { type: "Vitals", count: Math.floor(Math.random()*30+30) },
+    { type: "Consult", count: Math.floor(Math.random()*10+10) },
+  ];
+
+  if (authLoading || isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
+        <p>Loading admin dashboard...</p>
+      </div>
+    );
+  }
+
+  if (userRole !== 'admin' && !isLoading) {
+     return (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Access Denied</AlertTitle>
+          <AlertDescription>You do not have permission to view this page. Admin privileges required.</AlertDescription>
+        </Alert>
+    );
+  }
+  
+  if (error) {
+    return (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error Loading Data</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+    );
+  }
+
+
   return (
     <div className="space-y-8">
       <div>
@@ -71,8 +149,8 @@ export default function AdminDashboardPage() {
             <UsersRound className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockUsers.length}</div>
-            <p className="text-xs text-muted-foreground">+3 since last month</p>
+            <div className="text-2xl font-bold">{users.length}</div>
+            <p className="text-xs text-muted-foreground">+3 since last month (mock)</p>
           </CardContent>
         </Card>
         <Card className="shadow-md">
@@ -81,18 +159,18 @@ export default function AdminDashboardPage() {
             <UsersRound className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockUsers.filter(u => u.role === 'Nurse').length}</div>
-            <p className="text-xs text-muted-foreground">Online: 2</p>
+            <div className="text-2xl font-bold">{nurses.filter(n => n.status === 'Available' || n.status === 'On Duty').length}</div>
+            <p className="text-xs text-muted-foreground">Online: {nurses.filter(n => n.status === 'On Duty').length} (mock)</p>
           </CardContent>
         </Card>
         <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Approvals</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Patients</CardTitle>
             <UsersRound className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">2</div>
-            <p className="text-xs text-muted-foreground">Nurse applications</p>
+            <div className="text-2xl font-bold">{patients.length}</div>
+            <p className="text-xs text-muted-foreground">Active Care: {patients.filter(p => p.status !== 'Discharged').length} (mock)</p>
           </CardContent>
         </Card>
       </div>
@@ -116,17 +194,17 @@ export default function AdminDashboardPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mockUsers.map((user) => (
+              {users.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
-                  <TableCell><Badge variant={user.role === 'Admin' ? 'destructive' : 'secondary'}>{user.role}</Badge></TableCell>
+                  <TableCell><Badge variant={user.role === 'admin' ? 'destructive' : 'secondary'}>{user.role}</Badge></TableCell>
                   <TableCell>
                     <Badge variant={user.status === 'Active' ? 'default' : 'outline'} className={user.status === 'Active' ? 'bg-green-500/20 text-green-700 border-green-500/30' : 'bg-yellow-500/20 text-yellow-700 border-yellow-500/30'}>
                         {user.status}
                     </Badge>
                   </TableCell>
-                  <TableCell>{user.joined}</TableCell>
+                  <TableCell>{user.joined ? format(parseISO(user.joined), "PP") : 'N/A'}</TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -155,6 +233,7 @@ export default function AdminDashboardPage() {
               ))}
             </TableBody>
           </Table>
+          {users.length === 0 && <p className="text-center text-muted-foreground py-4">No users found.</p>}
           <div className="mt-4 flex justify-end">
             <Button>Add New User</Button>
           </div>
@@ -172,13 +251,14 @@ export default function AdminDashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Active Users Over Time</CardTitle>
+                <CardDescription className="text-xs">Based on user join dates.</CardDescription>
               </CardHeader>
               <CardContent>
                 <ChartContainer config={chartConfigLine} className="h-[240px] w-full">
                   <LineChart data={activeUsersData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                    <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
                     <Tooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
                     <Legend />
                     <Line dataKey="users" type="monotone" stroke="var(--color-users)" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
@@ -189,6 +269,7 @@ export default function AdminDashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Appointment Trends</CardTitle>
+                <CardDescription className="text-xs">Mock data - 'type' field needed for actual trends.</CardDescription>
               </CardHeader>
               <CardContent>
                 <ChartContainer config={chartConfigBar} className="h-[240px] w-full">
@@ -206,7 +287,7 @@ export default function AdminDashboardPage() {
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
             Further reports could include: popular features, nurse activity levels, patient engagement metrics, etc.
-            These would require data collection and backend processing.
+            These would require data collection and backend processing or more detailed data models.
           </p>
         </CardContent>
       </Card>

@@ -4,14 +4,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { format } from "date-fns";
 
 import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -22,62 +21,116 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { Calendar as CalendarIconLucide, Clock, Loader2, PlusCircle } from "lucide-react"; // Renamed to avoid conflict
+import { Calendar as CalendarIconLucide, Clock, Loader2, PlusCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
+import { fetchPatients, fetchNurses, addAppointment, type PatientListItem, type NurseListItem, type AddAppointmentFormValues } from "@/app/actions";
+import { useAuth } from "@/contexts/auth-context";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const appointmentFormSchema = z.object({
-  patientName: z.string().min(2, { message: "Patient name is required." }),
-  nurseName: z.string().min(2, { message: "Nurse name is required." }),
+  patientId: z.string().min(1, { message: "Patient selection is required." }),
+  nurseId: z.string().min(1, { message: "Nurse selection is required." }),
   appointmentDate: z.date({ required_error: "Appointment date is required." }),
-  appointmentTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, { message: "Invalid time format (HH:MM)."}), // HH:MM format
+  appointmentTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, { message: "Invalid time format (HH:MM)."}),
   appointmentType: z.string().min(3, { message: "Appointment type is required." }),
 });
 
-type AppointmentFormValues = z.infer<typeof appointmentFormSchema>;
-
-// Mock data for dropdowns - replace with actual data fetching
-const mockPatients = [
-  { id: 'p1', name: 'Alice Wonderland' },
-  { id: 'p2', name: 'Bob The Builder' },
-  { id: 'p3', name: 'Charlie Chaplin' },
-];
-
-const mockNurses = [
-  { id: 'n1', name: 'Nurse Alex' },
-  { id: 'n2', name: 'Nurse Betty' },
-  { id: 'n3', name: 'Nurse Charles' },
-];
+// This type is for the client-side form values which includes IDs for patient/nurse
+type ClientAppointmentFormValues = z.infer<typeof appointmentFormSchema>;
 
 const appointmentTypes = ["Check-up", "Medication Review", "Wound Care", "Vitals Check", "Consultation"];
-
 
 export default function NewAppointmentPage() {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+  const [patients, setPatients] = useState<PatientListItem[]>([]);
+  const [nurses, setNurses] = useState<NurseListItem[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const { currentUser, loading: authLoading } = useAuth();
 
-  const form = useForm<AppointmentFormValues>({
+  useEffect(() => {
+    async function loadInitialData() {
+      if (authLoading || !currentUser) {
+        if(!currentUser && !authLoading) setDataError("Please log in to schedule appointments.");
+        setIsLoadingData(authLoading);
+        return;
+      }
+      setIsLoadingData(true);
+      setDataError(null);
+      try {
+        const [patientsResult, nursesResult] = await Promise.all([
+          fetchPatients(),
+          fetchNurses()
+        ]);
+        if (patientsResult.data) setPatients(patientsResult.data);
+        else setDataError(prev => `${prev ? prev + " " : ""}Failed to load patients: ${patientsResult.error || 'Unknown error'}`);
+        
+        if (nursesResult.data) setNurses(nursesResult.data);
+        else setDataError(prev => `${prev ? prev + " " : ""}Failed to load nurses: ${nursesResult.error || 'Unknown error'}`);
+
+      } catch (e: any) {
+        setDataError(`Failed to load patients or nurses: ${e.message}`);
+      } finally {
+        setIsLoadingData(false);
+      }
+    }
+    loadInitialData();
+  }, [currentUser, authLoading]);
+
+  const form = useForm<ClientAppointmentFormValues>({
     resolver: zodResolver(appointmentFormSchema),
     defaultValues: {
-      patientName: "",
-      nurseName: "",
+      patientId: "",
+      nurseId: "",
       appointmentDate: undefined,
       appointmentTime: "",
       appointmentType: "",
     },
   });
 
-  function onSubmit(values: AppointmentFormValues) {
+  function onSubmit(values: ClientAppointmentFormValues) {
     startTransition(async () => {
-      console.log("Appointment data submitted:", values);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      toast({
-        title: "Appointment Scheduled",
-        description: `Appointment for ${values.patientName} with ${values.nurseName} on ${format(values.appointmentDate, "PPP")} at ${values.appointmentTime} has been scheduled.`,
-      });
-      form.reset();
+      // The server action 'addAppointment' expects AddAppointmentFormValues
+      // which includes patientId and nurseId.
+      const result = await addAppointment(values);
+      
+      if (result.success) {
+        const selectedPatient = patients.find(p => p.id === values.patientId);
+        const selectedNurse = nurses.find(n => n.id === values.nurseId);
+        toast({
+          title: "Appointment Scheduled",
+          description: `Appointment for ${selectedPatient?.name || 'Selected Patient'} with ${selectedNurse?.name || 'Selected Nurse'} on ${format(values.appointmentDate, "PPP")} at ${values.appointmentTime} has been scheduled.`,
+        });
+        form.reset();
+      } else {
+         toast({
+          variant: "destructive",
+          title: "Scheduling Failed",
+          description: result.message || "Could not schedule appointment.",
+        });
+      }
     });
+  }
+
+  if (authLoading || isLoadingData) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
+        <p>Loading data for scheduling...</p>
+      </div>
+    );
+  }
+
+  if (dataError) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error Loading Data</AlertTitle>
+        <AlertDescription>{dataError}</AlertDescription>
+      </Alert>
+    );
   }
 
   return (
@@ -105,18 +158,18 @@ export default function NewAppointmentPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
-                  name="patientName"
+                  name="patientId"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Patient Name</FormLabel>
-                       <Select onValueChange={field.onChange} defaultValue={field.value}>
+                       <Select onValueChange={field.onChange} defaultValue={field.value} disabled={patients.length === 0}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select a patient" />
+                            <SelectValue placeholder={patients.length === 0 ? "No patients available" : "Select a patient"} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {mockPatients.map(p => <SelectItem key={p.id} value={p.name}>{p.name}</SelectItem>)}
+                          {patients.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -125,18 +178,18 @@ export default function NewAppointmentPage() {
                 />
                 <FormField
                   control={form.control}
-                  name="nurseName"
+                  name="nurseId"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Nurse Name</FormLabel>
-                       <Select onValueChange={field.onChange} defaultValue={field.value}>
+                       <Select onValueChange={field.onChange} defaultValue={field.value} disabled={nurses.length === 0}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select a nurse" />
+                            <SelectValue placeholder={nurses.length === 0 ? "No nurses available" : "Select a nurse"} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {mockNurses.map(n => <SelectItem key={n.id} value={n.name}>{n.name}</SelectItem>)}
+                          {nurses.map(n => <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -177,7 +230,7 @@ export default function NewAppointmentPage() {
                             selected={field.value}
                             onSelect={field.onChange}
                             disabled={(date) =>
-                              date < new Date(new Date().setHours(0,0,0,0)) // Disable past dates
+                              date < new Date(new Date().setHours(0,0,0,0)) 
                             }
                             initialFocus
                           />
@@ -228,7 +281,7 @@ export default function NewAppointmentPage() {
               />
             </CardContent>
             <CardFooter className="flex justify-end">
-              <Button type="submit" disabled={isPending}>
+              <Button type="submit" disabled={isPending || isLoadingData}>
                 {isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

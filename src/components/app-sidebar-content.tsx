@@ -57,6 +57,7 @@ const adminMenuItems = [
 export function AppSidebarContent() {
   const pathname = usePathname()
   const { userRole } = useAuth(); // Get userRole from AuthContext
+  console.log("[AppSidebarContent] User role:", userRole); // Added for debugging
 
   const isActive = (path: string) => pathname === path || (path !== "/dashboard" && pathname.startsWith(path))
 

@@ -51,7 +51,7 @@ const roles = [
   { value: "medecin", label: "Medecin" },
   { value: "aide-soignant", label: "Aide soignant" },
   { value: "kinesitherapeute", label: "Kinesitherapeute" },
-  { value: "admin", label: "Administrateur (Dev)"}, // Added for testing
+  { value: "admin", label: "Administrateur (Dev)"},
 ];
 
 export default function SignupPage() {
@@ -94,10 +94,15 @@ export default function SignupPage() {
     setIsLoading(false);
 
     if (error) {
+      let description = error.message || "Une erreur inattendue s'est produite.";
+      if (error.code === "auth/email-already-in-use") {
+        description = `Cet e-mail est déjà utilisé par un compte dans Firebase Authentication. Veuillez utiliser un autre e-mail ou supprimer le compte existant depuis la console Firebase. (Note: La table 'users' dans Firestore est séparée du système d'authentification).`;
+      }
       toast({
         variant: "destructive",
         title: "Échec de l'inscription",
-        description: error.message || "Une erreur inattendue s'est produite.",
+        description: description,
+        duration: 9000, // Show for longer
       });
     } else if (user) {
       toast({
@@ -328,3 +333,6 @@ export default function SignupPage() {
     </div>
   );
 }
+
+
+    

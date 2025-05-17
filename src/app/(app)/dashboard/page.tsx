@@ -1,11 +1,11 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Users, CalendarCheck, Stethoscope, AlertCircle, Loader2, CheckCheck, TrendingDown, BarChartHorizontalBig, LineChart as LineChartIcon, PieChart as PieChartIconLucide, ListChecks, ClockIcon } from "lucide-react"; 
+import { Activity, Users, CalendarCheck, Stethoscope, AlertCircle, Loader2, CheckCheck, TrendingDown, BarChartHorizontalBig, LineChart as LineChartIcon, PieChart as PieChartIconLucide, ListChecks, ClockIcon, DatabaseZap } from "lucide-react"; 
 import Image from "next/image";
-import { fetchDashboardStats, type DashboardStats, type PatientRegistrationDataPoint, type AppointmentStatusDataPoint, type NursePerformanceDataPoint } from "@/app/actions";
+import { fetchDashboardStats, seedDatabase, type DashboardStats, type PatientRegistrationDataPoint, type AppointmentStatusDataPoint, type NursePerformanceDataPoint } from "@/app/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
@@ -66,6 +66,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSeeding, setIsSeeding] = React.useState(false);
 
   useEffect(() => {
     if (authLoading) {
@@ -96,6 +97,48 @@ export default function DashboardPage() {
     }
   }, [currentUser, authLoading]);
 
+  const handleSeedDatabase = async () => {
+    if (!currentUser) {
+      toast({
+        variant: "destructive",
+        title: "Authentication Required",
+        description: "You must be logged in to seed the database.",
+      });
+      return;
+    }
+    setIsSeeding(true);
+    toast({ title: "Seeding started...", description: "Please wait. This may take a moment." });
+    try {
+      const result = await seedDatabase();
+      if (result.success) {
+        toast({
+          title: "Database Seeding Successful",
+          description: result.message + (result.details ? ` Details: ${JSON.stringify(result.details)}` : ""),
+          duration: 15000, // Show for longer
+        });
+        // Optionally, refresh dashboard stats after seeding
+        // const newStats = await fetchDashboardStats();
+        // if (newStats.data) setStats(newStats.data);
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Database Seeding Failed",
+          description: result.message + (result.details ? ` Details: ${JSON.stringify(result.details)}` : ""),
+          duration: 15000,
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Seeding Error",
+        description: error.message || "An unexpected error occurred during seeding.",
+        duration: 15000,
+      });
+    } finally {
+      setIsSeeding(false);
+    }
+  };
+
   if (isLoading || authLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -113,6 +156,10 @@ export default function DashboardPage() {
           <AlertTitle>Error Loading Dashboard Data</AlertTitle>
           <AlertDescription>{error || "Could not load dashboard statistics."}</AlertDescription>
         </Alert>
+        <Button onClick={handleSeedDatabase} disabled={isSeeding} variant="outline" className="mt-4">
+          <DatabaseZap className="mr-2 h-4 w-4" />
+          {isSeeding ? "Seeding..." : "Seed All Data (Users, Patients, Nurses, Consults)"}
+        </Button>
       </div>
     );
   }
@@ -128,6 +175,14 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent>
           <p>Navigate through the sections using the sidebar to manage patients, nurses, appointments, and more. Get personalized care suggestions powered by AI to enhance patient outcomes.</p>
+           <Button onClick={handleSeedDatabase} disabled={isSeeding || !currentUser} variant="outline" className="mt-4">
+            <DatabaseZap className="mr-2 h-4 w-4" />
+            {isSeeding ? "Seeding Database..." : "Seed Database with Tunisian Data"}
+          </Button>
+          {!currentUser && <p className="text-xs text-destructive mt-1">Login to enable database seeding.</p>}
+          <p className="text-xs text-muted-foreground mt-1">
+            (Click to populate with sample Users, Patients, Nurses, and Video Consults if database is empty)
+          </p>
         </CardContent>
       </Card>
 
@@ -234,7 +289,7 @@ export default function DashboardPage() {
                     <XAxis type="number" hide/>
                     <YAxis dataKey="type" type="category" tickLine={false} axisLine={false} tickMargin={8} width={100} fontSize={12} />
                     <Tooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
-                    <Legend content={<ChartLegendContent />} />
+                    {/* <Legend content={<ChartLegendContent />} /> */} {/* Removed legend for this specific chart to save space */}
                     <Bar dataKey="count" barSize={15} radius={4}>
                       {appointmentsByTypeDataMock.map((entry) => (
                         <Cell key={`cell-${entry.type}`} fill={entry.fill} />
@@ -333,3 +388,5 @@ export default function DashboardPage() {
   );
 }
 
+
+    

@@ -67,17 +67,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         // User is signed in, now fetch their role from Firestore
+        // The 'role' field is expected in the 'users' collection, document ID = user.uid
         const userDocRef = doc(db, "users", user.uid);
         const userDocSnap = await getDoc(userDocRef);
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data();
           setCurrentUser({ ...user, appRole: userData.role } as AppUser);
-          setUserRole(userData.role || null);
+          setUserRole(userData.role || null); // Set the role based on Firestore data
         } else {
           // No custom profile yet, or role not set
           setCurrentUser(user as AppUser);
           setUserRole(null);
-          console.warn(`No Firestore profile found for user ${user.uid}, role will be null.`);
+          console.warn(`No Firestore profile found for user ${user.uid} in 'users' collection, role will be null.`);
         }
       } else {
         // User is signed out

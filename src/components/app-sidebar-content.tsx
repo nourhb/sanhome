@@ -14,8 +14,8 @@ import {
   Video,
   Bell,
   Activity,
-  HeartPulse,
-  Shield, // Changed from ShieldCog
+  Shield,
+  DatabaseZap, // Added icon for Data Viewer
 } from "lucide-react"
 
 import { APP_NAME } from "@/lib/constants"
@@ -48,7 +48,8 @@ const secondaryMenuItems = [
 ]
 
 const adminMenuItems = [
-  { href: "/admin/dashboard", label: "Admin Dashboard", icon: Shield }, // Changed from ShieldCog
+  { href: "/admin/dashboard", label: "Admin Dashboard", icon: Shield },
+  { href: "/dev/data-viewer", label: "Data Viewer", icon: DatabaseZap }, // New Data Viewer link
 ]
 
 
@@ -126,7 +127,7 @@ export function AppSidebarContent() {
             <Separator className="my-4" />
             <SidebarMenu>
               <SidebarMenuItem>
-                 <span className="px-2 text-xs font-semibold text-muted-foreground group-data-[collapsible=icon]:hidden">Admin</span>
+                 <span className="px-2 text-xs font-semibold text-muted-foreground group-data-[collapsible=icon]:hidden">Admin & Dev</span>
               </SidebarMenuItem>
               {adminMenuItems.map((item) => (
                 <SidebarMenuItem key={item.label}>
@@ -180,4 +181,3 @@ export function AppSidebarContent() {
     </>
   )
 }
-

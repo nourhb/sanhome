@@ -12,6 +12,7 @@ interface AppLayoutProps {
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  console.log('AppLayout rendering'); // Added for debugging
   return (
     <SidebarProvider defaultOpen={true}>
       <Sidebar className="border-r bg-sidebar text-sidebar-foreground">

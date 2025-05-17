@@ -8,7 +8,7 @@ import {
 } from '@/ai/flows/personalized-care-suggestions';
 import { z } from 'zod';
 import { generateRandomPassword, generateRandomString, generatePhoneNumber, generateDateOfBirth } from '@/lib/utils';
-import { auth as firebaseAuthInstance, db as firestoreInstance, storage as firebaseStorageInstance } from '@/lib/firebase';
+import { auth as firebaseAuthInstance, db as firestoreInstance, storage as firebaseStorageInstance } from '@/lib/firebase'; // db and storage are re-enabled
 import {
   collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp,
   query, where, updateDoc, deleteDoc, writeBatch, getCountFromServer, orderBy, limit, setDoc, collectionGroup
@@ -651,7 +651,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
   const userRefs: { uid: string, name: string, email: string }[] = [];
 
   if (!firestoreInstance || !firebaseAuthInstance) {
-    const errMessage = "Firebase services (Firestore or Auth) not initialized correctly within server action. Check lib/firebase.ts and ensure .env configuration is loaded/available in this server context.";
+    const errMessage = "Firebase services (Firestore or Auth) not initialized correctly. Check lib/firebase.ts and .env configuration.";
     console.error(`[ACTION_ERROR] seedDatabase: ${errMessage}`);
     return { success: false, message: errMessage, details: {} };
   }
@@ -659,21 +659,27 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
   try {
     // --- Seed Users ---
     console.log("[ACTION_LOG] seedDatabase: Checking 'users' collection in Firestore...");
-    const usersCollectionRef = collection(firestoreInstance, "users");
-    const usersCountSnapshot = await getCountFromServer(usersCollectionRef);
-    const usersCount = usersCountSnapshot.data().count;
-    console.log(`[ACTION_LOG] seedDatabase: Found ${usersCount} existing user documents in Firestore.`);
-    results.users = `Checked 'users' collection, found ${usersCount} documents. `;
+    let usersCount = 0;
+    try {
+      const usersCountSnapshot = await getCountFromServer(collection(firestoreInstance, "users"));
+      usersCount = usersCountSnapshot.data().count;
+      console.log(`[ACTION_LOG] seedDatabase: Found ${usersCount} existing user documents in Firestore.`);
+      results.users = `Checked 'users' collection, found ${usersCount} documents. `;
+    } catch (e: any) {
+      console.error("[ACTION_ERROR] seedDatabase: Failed to get count for 'users' collection:", e);
+      results.users = `Error checking 'users' collection: ${e.message}. `;
+      // Allow continuing to other collections if this specific check fails but others might work
+    }
 
 
     if (usersCount === 0) {
       console.log("[ACTION_LOG] seedDatabase: 'users' collection is empty. Attempting to seed users...");
-      const sampleAuthUsers = Array.from({ length: 10 }, (_, index) => ({ 
-        email: `user${index + 1}@sanhome.com`, 
+      const sampleAuthUsers = Array.from({ length: 10 }, (_, index) => ({
+        email: `user${index + 1}-${generateRandomString(4)}@sanhome.com`, // More unique emails
         password: "Password123!",
         firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
         lastName: lastNames[Math.floor(Math.random() * lastNames.length)],
-        role: tunisianRoles[Math.floor(Math.random() * tunisianRoles.length)], 
+        role: tunisianRoles[Math.floor(Math.random() * tunisianRoles.length)],
         phoneNumber: generatePhoneNumber(),
         address: addresses[Math.floor(Math.random() * addresses.length)],
         dateOfBirth: generateDateOfBirth(),
@@ -681,6 +687,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
       }));
 
       let seededUsersCount = 0;
+      let userSeedingErrors = "";
       for (const userData of sampleAuthUsers) {
         try {
           console.log(`[ACTION_LOG] seedDatabase: Attempting to create auth user: ${userData.email}`);
@@ -708,15 +715,20 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
           userRefs.push({ uid: user.uid, name: `${userData.firstName} ${userData.lastName}`, email: userData.email });
           seededUsersCount++;
           console.log(`[ACTION_LOG] Seeded user profile in Firestore for ${userData.email}`);
-          await sendEmailVerification(user);
-          console.log(`[ACTION_LOG] Sent verification email to ${userData.email}`);
+          // Consider if email verification is needed for seeded users. For testing, maybe not.
+          // await sendEmailVerification(user);
+          // console.log(`[ACTION_LOG] Sent verification email to ${userData.email}`);
         } catch (e: any) {
+          const errorMsg = `Error for ${userData.email}: Firebase: Error (${e.code || 'unknown'}). (${e.message || 'No message'}). `;
           console.error(`[ACTION_ERROR] seedDatabase (user ${userData.email}): Code: ${e.code}, Message: ${e.message}`, e);
-          results.users += `Error for ${userData.email}: ${e.message} (Code: ${e.code}). `;
+          userSeedingErrors += errorMsg;
           allSuccess = false;
         }
       }
       results.users += `Seeded ${seededUsersCount} users.`;
+      if (userSeedingErrors) {
+        results.users += ` Errors encountered: ${userSeedingErrors}`;
+      }
     } else {
       results.users += "Skipping seeding users.";
       console.log("[ACTION_LOG] seedDatabase: 'users' collection not empty, skipping user seeding.");
@@ -735,12 +747,16 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
 
     // --- Seed Patients ---
     console.log("[ACTION_LOG] seedDatabase: Checking 'patients' collection...");
-    const patientsCollectionRef = collection(firestoreInstance, "patients");
-    console.log(`[ACTION_LOG] seedDatabase: Attempting getCountFromServer for 'patients' collection. Firestore instance valid: ${!!firestoreInstance}`);
-    const patientsCountSnapshot = await getCountFromServer(patientsCollectionRef);
-    const patientsCount = patientsCountSnapshot.data().count;
-    console.log(`[ACTION_LOG] seedDatabase: Found ${patientsCount} existing patient documents. Current count: ${patientsCount}.`);
-    results.patients = `Checked 'patients' collection, found ${patientsCount} documents. `;
+    let patientsCount = 0;
+    try {
+        const patientsCountSnapshot = await getCountFromServer(collection(firestoreInstance, "patients"));
+        patientsCount = patientsCountSnapshot.data().count;
+        console.log(`[ACTION_LOG] seedDatabase: Found ${patientsCount} existing patient documents. Current count: ${patientsCount}.`);
+        results.patients = `Checked 'patients' collection, found ${patientsCount} documents. `;
+    } catch (e: any) {
+        console.error("[ACTION_ERROR] seedDatabase: Failed to get count for 'patients' collection:", e);
+        results.patients = `Error checking 'patients' collection: ${e.message}. `;
+    }
     
 
     if (patientsCount === 0) {
@@ -791,11 +807,16 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
 
     // --- Seed Nurses ---
     console.log("[ACTION_LOG] seedDatabase: Checking 'nurses' collection...");
-    const nursesCollectionRef = collection(firestoreInstance, "nurses");
-    const nursesCountSnapshot = await getCountFromServer(nursesCollectionRef);
-    const nursesCount = nursesCountSnapshot.data().count;
-    console.log(`[ACTION_LOG] seedDatabase: Found ${nursesCount} existing nurse documents in Firestore.`);
-    results.nurses = `Checked 'nurses' collection, found ${nursesCount} documents. `;
+    let nursesCount = 0;
+    try {
+      const nursesCountSnapshot = await getCountFromServer(collection(firestoreInstance, "nurses"));
+      nursesCount = nursesCountSnapshot.data().count;
+      console.log(`[ACTION_LOG] seedDatabase: Found ${nursesCount} existing nurse documents in Firestore.`);
+      results.nurses = `Checked 'nurses' collection, found ${nursesCount} documents. `;
+    } catch (e: any) {
+        console.error("[ACTION_ERROR] seedDatabase: Failed to get count for 'nurses' collection:", e);
+        results.nurses = `Error checking 'nurses' collection: ${e.message}. `;
+    }
 
 
     if (nursesCount === 0) {
@@ -868,11 +889,16 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
 
     // --- Seed Video Consults ---
     console.log("[ACTION_LOG] seedDatabase: Checking 'videoConsults' collection...");
-    const videoConsultsCollectionRef = collection(firestoreInstance, "videoConsults");
-    const videoConsultsCountSnapshot = await getCountFromServer(videoConsultsCollectionRef);
-    const videoConsultsCount = videoConsultsCountSnapshot.data().count;
-    console.log(`[ACTION_LOG] seedDatabase: Found ${videoConsultsCount} existing video consult documents in Firestore.`);
-    results.videoConsults = `Checked 'videoConsults' collection, found ${videoConsultsCount} documents. `;
+    let videoConsultsCount = 0;
+    try {
+      const videoConsultsCountSnapshot = await getCountFromServer(collection(firestoreInstance, "videoConsults"));
+      videoConsultsCount = videoConsultsCountSnapshot.data().count;
+      console.log(`[ACTION_LOG] seedDatabase: Found ${videoConsultsCount} existing video consult documents in Firestore.`);
+      results.videoConsults = `Checked 'videoConsults' collection, found ${videoConsultsCount} documents. `;
+    } catch (e: any) {
+        console.error("[ACTION_ERROR] seedDatabase: Failed to get count for 'videoConsults' collection:", e);
+        results.videoConsults = `Error checking 'videoConsults' collection: ${e.message}. `;
+    }
     
 
     if (videoConsultsCount === 0) {
@@ -938,7 +964,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
   } catch (error: any) {
     const firebaseErrorCode = error.code || 'N/A';
     const firebaseErrorMessage = error.message || 'Unknown error';
-    let specificMessage = `Database seeding failed critically: ${firebaseErrorMessage} (Code: ${firebaseErrorCode}).`;
+    let specificMessage = `Database seeding failed critically. Ensure Firestore/Auth rules allow writes for authenticated users and that you are logged in when triggering this. Also check project API enablement. Check server console for specific Firebase error codes. Firebase: ${firebaseErrorMessage} (Code: ${firebaseErrorCode}).`;
 
     console.error(`[ACTION_ERROR] seedDatabase: CRITICAL error during seeding process. Code: ${firebaseErrorCode}, Message: ${firebaseErrorMessage}`, error);
     
@@ -948,7 +974,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
         specificMessage = "Database seeding failed: One or more user emails already exist in Firebase Authentication. Clear existing test users or use different emails.";
     } else if (firebaseErrorCode === 'permission-denied' || firebaseErrorMessage.includes('PERMISSION_DENIED') || firebaseErrorMessage.includes("Missing or insufficient permissions")) {
         specificMessage = "Database seeding failed: Missing or insufficient permissions. Ensure Firestore/Auth rules allow writes FOR AUTHENTICATED USERS (if rules are 'request.auth != null') and that you are logged in when triggering this. If rules are temporarily open (allow write: if true;), ensure they are published and propagated. Firebase Code: " + firebaseErrorCode;
-    } else if (firebaseErrorMessage.includes("auth is not a function") || firebaseErrorMessage.includes("auth is not defined") || firebaseErrorMessage.includes("auth is null") || firebaseErrorMessage.includes("Firebase: Error (auth/internal-error).") ) {
+    } else if (firebaseAuthInstance && (firebaseErrorMessage.includes("auth is not a function") || firebaseErrorMessage.includes("auth is not defined") || firebaseErrorMessage.includes("auth is null") || firebaseErrorMessage.includes("Firebase: Error (auth/internal-error)."))) {
         specificMessage = "Database seeding failed: Firebase Authentication service might not be initialized correctly or available. Check Firebase setup in `lib/firebase.ts`. Firebase Message: " + firebaseErrorMessage;
     } else if (!firestoreInstance || !firebaseAuthInstance) {
          specificMessage = "Database seeding failed: Firebase services (Firestore or Auth) appear to be uninitialized within the server action. Check lib/firebase.ts and .env configuration.";
@@ -958,6 +984,10 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
         specificMessage = `Database seeding failed: Could not reach Cloud Firestore backend. This often indicates a network issue or that the Firestore API, while enabled, isn't reachable. Details: ${firebaseErrorMessage}`;
     } else if (firebaseErrorMessage.includes("Failed to fetch")) { 
         specificMessage = `Database seeding failed: A network error occurred ('Failed to fetch'). This could be a CORS issue if the request is cross-origin and not configured, a local network problem, or an issue with the Firebase backend. Details: ${firebaseErrorMessage}`;
+    } else if (firebaseErrorMessage.includes("Failed at initial check of 'users' collection")) {
+      specificMessage = `Database seeding failed: Could not check 'users' collection. Ensure Firestore API is enabled and rules allow reads. Details: ${firebaseErrorMessage}`;
+    } else if (firebaseErrorCode === 'auth/operation-not-allowed') {
+      specificMessage = `Database seeding failed: Email/password sign-in is not enabled for your Firebase project. Please enable it in the Firebase console (Authentication -> Sign-in method).`;
     }
 
 

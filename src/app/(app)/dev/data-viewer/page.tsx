@@ -1,11 +1,12 @@
 
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchCollectionData } from "@/app/actions"; // New server action
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { fetchCollectionData } from "@/app/actions"; // Server action
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, DatabaseZap, AlertCircle } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -37,6 +38,33 @@ export default function DataViewerPage() {
       }
       setIsLoading(false);
     });
+  };
+
+  const tableHeaders = useMemo(() => {
+    if (!collectionData || collectionData.length === 0) {
+      return [];
+    }
+    // Get all unique keys from all documents to form headers
+    const allKeys = new Set<string>();
+    collectionData.forEach(doc => {
+      Object.keys(doc).forEach(key => allKeys.add(key));
+    });
+    // Ensure 'id' is first if it exists
+    const sortedKeys = Array.from(allKeys);
+    if (sortedKeys.includes('id')) {
+        return ['id', ...sortedKeys.filter(key => key !== 'id')];
+    }
+    return sortedKeys;
+  }, [collectionData]);
+
+  const renderCellContent = (content: any) => {
+    if (typeof content === 'object' && content !== null) {
+      return JSON.stringify(content);
+    }
+    if (typeof content === 'boolean') {
+      return content.toString();
+    }
+    return content;
   };
 
   return (
@@ -94,19 +122,40 @@ export default function DataViewerPage() {
                 <CardDescription>
                   {collectionData.length === 0
                     ? "No documents found in this collection."
-                    : `Displaying ${collectionData.length} document(s).`}
+                    : `Displaying ${collectionData.length} document(s). Max 25 shown.`}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ScrollArea className="h-[500px] w-full rounded-md border p-4 bg-muted/50">
-                  {collectionData.length > 0 ? (
-                    <pre className="text-xs whitespace-pre-wrap break-all">
-                      {JSON.stringify(collectionData, null, 2)}
-                    </pre>
+                <ScrollArea className="h-[500px] w-full rounded-md border p-0 bg-muted/20">
+                  {collectionData.length > 0 && tableHeaders.length > 0 ? (
+                    <Table className="min-w-full">
+                      <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+                        <TableRow>
+                          {tableHeaders.map((header) => (
+                            <TableHead key={header} className="whitespace-nowrap px-3 py-2 text-xs sm:text-sm">
+                              {header}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {collectionData.map((doc, index) => (
+                          <TableRow key={doc.id || index}>
+                            {tableHeaders.map((header) => (
+                              <TableCell key={`${doc.id || index}-${header}`} className="px-3 py-2 text-xs align-top">
+                                <div className="max-w-xs truncate" title={typeof doc[header] === 'object' ? JSON.stringify(doc[header]) : String(doc[header])}>
+                                  {renderCellContent(doc[header])}
+                                </div>
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   ) : (
-                     <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                     <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
                         <DatabaseZap className="h-12 w-12 mb-2"/>
-                        <p>No documents to display.</p>
+                        <p>No documents to display or no data to form table.</p>
                      </div>
                   )}
                 </ScrollArea>

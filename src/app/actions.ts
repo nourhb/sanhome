@@ -8,12 +8,12 @@ import {
 } from '@/ai/flows/personalized-care-suggestions';
 import { z } from 'zod';
 import { generateRandomPassword, generateRandomString, generatePhoneNumber, generateDateOfBirth } from '@/lib/utils';
-import { auth as firebaseAuthInstanceOriginal, db as firestoreInstanceOriginal, storage } from '@/lib/firebase'; // db and storage are re-enabled
+import { auth as firebaseAuthInstanceOriginal, db as firestoreInstanceOriginal, storage } from '@/lib/firebase'; 
 import {
   collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp,
   query, where, updateDoc, deleteDoc, writeBatch, getCountFromServer, orderBy, limit, setDoc, collectionGroup
 } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword } from 'firebase/auth'; // For client-side auth operations within server actions
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { format } from 'date-fns';
 
@@ -64,7 +64,7 @@ export type PatientListItem = {
   hint?: string;
   currentMedications?: Array<{ name: string; dosage: string }>;
   recentVitals?: { date: string; bp: string; hr: string; temp: string; glucose: string };
-  createdAt?: Timestamp; // Keep as Firestore Timestamp for server-side logic if needed, convert for client
+  createdAt?: Timestamp; 
 };
 
 export async function fetchPatientById(id: string): Promise<{ data?: PatientListItem, error?: string }> {
@@ -108,7 +108,7 @@ export async function fetchPatientById(id: string): Promise<{ data?: PatientList
         recentVitals: data.recentVitals || {
             date: "2024-07-30", bp: "140/90 mmHg", hr: "75 bpm", temp: "37.0°C", glucose: "120 mg/dL"
         },
-        createdAt: data.createdAt, // Keep as Firestore Timestamp
+        createdAt: data.createdAt, 
       } as PatientListItem;
       console.log("[ACTION_LOG] fetchPatientById: Data mapping complete. Returning data.");
       return { data: patientData };
@@ -203,7 +203,7 @@ export type NurseListItem = {
   avatar: string;
   status: 'Available' | 'On Duty' | 'Unavailable' | string;
   hint?: string;
-  createdAt?: Timestamp; // Keep as Firestore Timestamp
+  createdAt?: Timestamp; 
 };
 
 const AddNurseInputSchema = z.object({
@@ -298,15 +298,15 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
     console.log("[ACTION_LOG] fetchDashboardStats: Getting counts for patients, nurses, consults.");
     const [
       patientCountSnapshot,
-      nursesSnapshot,
-      videoConsultsSnapshot
+      nursesSnapshot, // Fetch all nurses for status
+      videoConsultsSnapshot // Fetch all consults for aggregation
     ] = await Promise.all([
       getCountFromServer(patientsCollectionRef),
-      getDocs(query(nursesCollectionRef)), // Fetch all nurses to count available ones
-      getDocs(query(videoConsultsCollectionRef)) // Fetch all consults for status and performance
+      getDocs(query(nursesCollectionRef)),
+      getDocs(query(videoConsultsCollectionRef))
     ]);
-    console.log("[ACTION_LOG] fetchDashboardStats: Counts received.");
-
+    console.log("[ACTION_LOG] fetchDashboardStats: Counts and documents received.");
+    
     const activePatients = patientCountSnapshot.data().count;
     const availableNurses = nursesSnapshot.docs.filter(doc => doc.data().status === 'Available').length;
 
@@ -322,7 +322,7 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
       const consultData = docSnap.data();
       const consultTime = consultData.consultationTime as Timestamp;
 
-      if (consultData.status === 'scheduled' && consultTime.toDate() >= todayStart) {
+      if (consultData.status === 'scheduled' && consultTime && consultTime.toDate() >= todayStart) {
         upcomingAppointments++;
         if (consultTime.toDate().toDateString() === todayStart.toDateString()) {
           upcomingAppointmentsTodayCount++;
@@ -331,17 +331,16 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
       const status = consultData.status as string;
       if (statusCounts.hasOwnProperty(status)) {
         statusCounts[status] = (statusCounts[status] || 0) + 1;
-      } else if (status) { // Handle unexpected statuses gracefully
+      } else if (status) { 
         statusCounts[status] = (statusCounts[status] || 0) + 1;
       }
-
 
       const nurseName = consultData.nurseName as string;
       if (nurseName) {
         nursePerformance[nurseName] = (nursePerformance[nurseName] || 0) + 1;
       }
     });
-    console.log("[ACTION_LOG] fetchDashboardStats: Consults processed.");
+    console.log("[ACTION_LOG] fetchDashboardStats: Consults processed for upcoming, status, and performance.");
 
     const activePatientsChange = activePatients > 0 ? `+${Math.floor(Math.random()*5 + 1)} since last week` : "N/A";
     const availableNursesOnline = availableNurses > 0 ? `Online: ${Math.max(1,Math.floor(Math.random()*availableNurses))}` : "Online: 0";
@@ -364,7 +363,7 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
 
     const patientRegistrationsData: PatientRegistrationDataPoint[] = [];
     const currentJsDate = new Date();
-    for (let i = 5; i >= 0; i--) { // Last 6 months including current
+    for (let i = 5; i >= 0; i--) { 
         const d = new Date(currentJsDate.getFullYear(), currentJsDate.getMonth() - i, 1);
         const displayMonthKey = `${monthNames[d.getMonth()]} '${String(d.getFullYear()).slice(-2)}`;
         patientRegistrationsData.push({
@@ -378,17 +377,17 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
       { status: "Completed", count: statusCounts.completed || 0, fill: "hsl(var(--chart-1))" },
       { status: "Scheduled", count: statusCounts.scheduled || 0, fill: "hsl(var(--chart-2))" },
       { status: "Cancelled", count: statusCounts.cancelled || 0, fill: "hsl(var(--destructive))" },
-    ].filter(item => item.count > 0); // Only include statuses with counts > 0
+    ].filter(item => item.count > 0); 
 
     const nurseColors = ["hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))", "hsl(var(--chart-1))", "hsl(var(--chart-2))"];
     const nursePerformanceData: NursePerformanceDataPoint[] = Object.entries(nursePerformance)
       .map(([name, count], index) => ({
         nurseName: name,
         consults: count,
-        fill: nurseColors[index % nurseColors.length] // Cycle through colors
+        fill: nurseColors[index % nurseColors.length] 
       }))
-      .sort((a, b) => b.consults - a.consults) // Sort by consult count descending
-      .slice(0, 5); // Take top 5
+      .sort((a, b) => b.consults - a.consults) 
+      .slice(0, 5); 
     console.log("[ACTION_LOG] fetchDashboardStats: Nurse performance processed.");
 
     const stats: DashboardStats = {
@@ -410,7 +409,6 @@ export async function fetchDashboardStats(): Promise<{ data?: DashboardStats, er
     console.error("[ACTION_ERROR] fetchDashboardStats: Error fetching dashboard stats from Firestore:", error.code, error.message, error);
     return {
       error: `Could not load dashboard statistics: ${error.message} (Code: ${error.code || 'N/A'})`,
-      // Return empty/default structure on error to prevent breaking the dashboard UI
       data: {
         activePatients: 0, activePatientsChange: "N/A",
         upcomingAppointments: 0, upcomingAppointmentsToday: "N/A",
@@ -481,7 +479,7 @@ export async function scheduleVideoConsult(
     const roomName = `sanhome-consult-${generateRandomString(8)}`;
     const effectiveDailyCoBaseUrl = dailyCoBaseUrl && !dailyCoBaseUrl.includes("YOUR_DAILY_CO_DOMAIN.daily.co") && dailyCoBaseUrl !== "https://example.daily.co/"
                                      ? dailyCoBaseUrl
-                                     : "https://sanhome.daily.co/"; // Fallback URL
+                                     : "https://sanhome.daily.co/"; 
     const dailyRoomUrl = `${effectiveDailyCoBaseUrl.endsWith('/') ? effectiveDailyCoBaseUrl : effectiveDailyCoBaseUrl + '/'}${roomName}`;
     console.log("[ACTION_LOG] scheduleVideoConsult: Generated Daily room URL:", dailyRoomUrl);
 
@@ -500,7 +498,7 @@ export async function scheduleVideoConsult(
     const docRef = await addDoc(collection(firestoreInstance, "videoConsults"), newVideoConsultData);
     console.log("[ACTION_LOG] scheduleVideoConsult: Video consult added to Firestore with ID:", docRef.id);
 
-    // Simulate email notifications
+    
     console.log(`[ACTION_LOG] scheduleVideoConsult: Simulated email to patient ${patient.email} about consult with link ${dailyRoomUrl}`);
     console.log(`[ACTION_LOG] scheduleVideoConsult: Simulated email to nurse ${nurse.email} about consult with link ${dailyRoomUrl}`);
 
@@ -553,6 +551,13 @@ export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListIte
 }
 
 // --- Database Seeding ---
+// IMPORTANT FOR SEEDING:
+// To successfully seed the database using this server action when your Firestore rules are
+// `allow read, write: if request.auth != null;`, you MUST be logged into the application
+// when triggering the seed action.
+// If that still fails due to permissions (because server actions might not carry client auth context properly),
+// you may need to TEMPORARILY open your Firestore rules (e.g., `allow read, write: if true;`),
+// run the seed, then IMMEDIATELY revert to secure rules (`allow read, write: if request.auth != null;`).
 const firstNames = [
   "Foulen", "Amina", "Mohamed", "Fatma", "Ali", "Sarah", "Youssef", "Hiba", "Ahmed", "Nour",
   "Khaled", "Lina", "Omar", "Zahra", "Hassan", "Mariem", "Ibrahim", "Sana", "Tarek", "Leila"
@@ -562,7 +567,7 @@ const lastNames = [
   "Chakroun", "Ben Ammar", "Dridi", "Sassi", "Kooli", "Mansouri", "Ayari", "Feki", "Belhadj",
   "Khemiri", "Zouari", "Gargouri"
 ];
-const tunisianRoles = ["sage-femme", "patient", "infirmiere", "medecin", "aide-soignant", "kinesitherapeute"];
+const tunisianRoles = ["sage-femme", "patient", "infirmiere", "medecin", "aide-soignant", "kinesitherapeute", "admin"];
 const addresses = [
   "Avenue Habib Bourguiba, Tunis", "Rue de la Liberté, Sfax", "Boulevard 7 Novembre, Sousse",
   "Rue Farhat Hached, Ariana", "Avenue Taieb Mhiri, Nabeul", "Rue de Carthage, Bizerte",
@@ -637,26 +642,26 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
   const userRefs: { uid: string, name: string, email: string }[] = [];
 
   try {
-    // Seed Users
-    console.log("[ACTION_LOG] seedDatabase: Checking 'users' collection in Firestore...");
-    const usersCollectionRef = collection(firestoreInstance, "users");
-    let currentUsersSnapshot;
+    let usersCount = 0;
     try {
-        currentUsersSnapshot = await getDocs(query(usersCollectionRef, limit(1)));
-        console.log(`[ACTION_LOG] seedDatabase: Successfully checked 'users' collection. Empty: ${currentUsersSnapshot.empty}`);
+      console.log("[ACTION_LOG] seedDatabase: Checking 'users' collection in Firestore...");
+      const usersCollectionRef = collection(firestoreInstance, "users");
+      const usersCountSnapshot = await getCountFromServer(usersCollectionRef);
+      usersCount = usersCountSnapshot.data().count;
+      console.log(`[ACTION_LOG] seedDatabase: Found ${usersCount} existing users.`);
     } catch (dbError: any) {
-        const specificError = `Firebase error checking 'users': ${dbError.code} - ${dbError.message}. Ensure Firestore API is enabled and rules allow reads.`;
-        console.error(`[ACTION_ERROR] seedDatabase: ${specificError}`, dbError);
-        return {
-            success: false,
-            message: `Database seeding failed. ${specificError}`,
-            details: {users: specificError}
-        };
+      const specificError = `Firebase error checking 'users': ${dbError.code} - ${dbError.message}. Ensure Firestore API is enabled and rules allow reads (potentially temporarily open rules for seeding: allow read, write: if true;).`;
+      console.error(`[ACTION_ERROR] seedDatabase: ${specificError}`, dbError);
+      return {
+          success: false,
+          message: `Database seeding failed: Could not check 'users' collection. ${specificError}`,
+          details: {users: specificError}
+      };
     }
 
-    if (currentUsersSnapshot.empty) {
+    if (usersCount === 0) {
       console.log("[ACTION_LOG] seedDatabase: 'users' collection is empty. Attempting to seed users...");
-      const sampleAuthUsers = Array.from({ length: 10 }, (_, index) => ({ // Reduced to 10 for quicker seeding
+      const sampleAuthUsers = Array.from({ length: 10 }, (_, index) => ({ 
         email: `user${index + 1}@sanhome.com`,
         password: "Password123!",
         firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
@@ -681,7 +686,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
           console.log(`[ACTION_LOG] seedDatabase: Auth user ${userData.email} created with UID ${user.uid}.`);
 
           const userProfile = {
-            email: userData.email, // Store email in profile as well
+            email: userData.email, 
             firstName: userData.firstName,
             lastName: userData.lastName,
             role: userData.role,
@@ -706,8 +711,8 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     } else {
       results.users = "Users collection is not empty. Skipping seeding users.";
       console.log("[ACTION_LOG] seedDatabase: 'users' collection not empty, skipping user seeding.");
-      const existingUsers = await getDocs(usersCollectionRef); // Load existing users for refs
-      existingUsers.forEach(docSnap => {
+      const existingUsersSnapshot = await getDocs(collection(firestoreInstance, "users"));
+      existingUsersSnapshot.forEach(docSnap => {
         const data = docSnap.data();
         if (data.firstName && data.lastName && data.email) {
              userRefs.push({ uid: docSnap.id, name: `${data.firstName} ${data.lastName}`, email: data.email });
@@ -718,30 +723,39 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
        console.log(`[ACTION_LOG] seedDatabase: Loaded ${userRefs.length} existing user references.`);
     }
 
-    // Seed Patients
-    console.log("[ACTION_LOG] seedDatabase: Checking 'patients' collection...");
-    const patientsCollectionRef = collection(firestoreInstance, "patients");
-    const currentPatientsSnapshot = await getDocs(query(patientsCollectionRef, limit(1)));
-    if (currentPatientsSnapshot.empty) {
+    
+    let patientsCount = 0;
+    try {
+        console.log("[ACTION_LOG] seedDatabase: Checking 'patients' collection...");
+        const patientsCollectionRef = collection(firestoreInstance, "patients");
+        const patientsCountSnapshot = await getCountFromServer(patientsCollectionRef);
+        patientsCount = patientsCountSnapshot.data().count;
+        console.log(`[ACTION_LOG] seedDatabase: Found ${patientsCount} existing patients.`);
+    } catch (dbError: any) {
+        console.error(`[ACTION_ERROR] seedDatabase: Could not check 'patients' collection.`, dbError);
+        results.patients = `Error checking 'patients' collection: ${dbError.message}. `;
+        allSuccess = false;
+    }
+    
+    if (patientsCount === 0) {
       console.log("[ACTION_LOG] seedDatabase: 'patients' collection is empty. Attempting to seed patients...");
       let seededPatientsCount = 0;
       for (const patientData of mockTunisianPatients) {
         try {
           const { lastVisitDate, ...restData } = patientData;
-          // Ensure nurseRefs is populated before trying to access it for random nurse assignment
           const randomNurseName = nurseRefs.length > 0 ? nurseRefs[Math.floor(Math.random() * nurseRefs.length)].name : (mockTunisianNurses[0]?.name || "Infirmière Non Assignée");
           const newPatient = {
             ...restData,
             primaryNurse: randomNurseName,
             avatarUrl: `https://placehold.co/100x100.png?text=${patientData.name.split(" ").map(n=>n[0]).join("")}`,
-            joinDate: Timestamp.fromDate(new Date(Date.now() - Math.floor(Math.random() * 365 * 24 * 60 * 60 * 1000))), // Random join date in last year
+            joinDate: Timestamp.fromDate(new Date(Date.now() - Math.floor(Math.random() * 365 * 24 * 60 * 60 * 1000))), 
             lastVisit: Timestamp.fromDate(new Date(lastVisitDate)),
             pathologies: patientData.pathologies,
             allergies: patientData.allergies,
             createdAt: serverTimestamp(),
           };
           console.log(`[ACTION_LOG] seedDatabase: Attempting to add patient: ${newPatient.name}`);
-          const docRef = await addDoc(patientsCollectionRef, newPatient);
+          const docRef = await addDoc(collection(firestoreInstance, "patients"), newPatient);
           patientRefs.push({ id: docRef.id, name: newPatient.name, email: newPatient.email });
           seededPatientsCount++;
           console.log(`[ACTION_LOG] Seeded patient: ${newPatient.name} with ID ${docRef.id}`);
@@ -755,8 +769,8 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     } else {
       results.patients = "Patients collection is not empty. Skipping seeding patients.";
       console.log("[ACTION_LOG] seedDatabase: 'patients' collection not empty, skipping patient seeding.");
-       const existingPatients = await getDocs(patientsCollectionRef); // Load existing patients for refs
-        existingPatients.forEach(docSnap => {
+       const existingPatientsSnapshot = await getDocs(collection(firestoreInstance, "patients"));
+        existingPatientsSnapshot.forEach(docSnap => {
             const data = docSnap.data();
             if (data.name && data.email) {
                 patientRefs.push({ id: docSnap.id, name: data.name, email: data.email });
@@ -765,11 +779,21 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
       console.log(`[ACTION_LOG] seedDatabase: Loaded ${patientRefs.length} existing patient references.`);
     }
 
-    // Seed Nurses
-    console.log("[ACTION_LOG] seedDatabase: Checking 'nurses' collection...");
-    const nursesCollectionRef = collection(firestoreInstance, "nurses");
-    const currentNursesSnapshot = await getDocs(query(nursesCollectionRef, limit(1)));
-    if (currentNursesSnapshot.empty) {
+    
+    let nursesCount = 0;
+     try {
+        console.log("[ACTION_LOG] seedDatabase: Checking 'nurses' collection...");
+        const nursesCollectionRef = collection(firestoreInstance, "nurses");
+        const nursesCountSnapshot = await getCountFromServer(nursesCollectionRef);
+        nursesCount = nursesCountSnapshot.data().count;
+        console.log(`[ACTION_LOG] seedDatabase: Found ${nursesCount} existing nurses.`);
+    } catch (dbError: any) {
+        console.error(`[ACTION_ERROR] seedDatabase: Could not check 'nurses' collection.`, dbError);
+        results.nurses = `Error checking 'nurses' collection: ${dbError.message}. `;
+        allSuccess = false;
+    }
+
+    if (nursesCount === 0) {
       console.log("[ACTION_LOG] seedDatabase: 'nurses' collection is empty. Attempting to seed nurses...");
       let seededNursesCount = 0;
       for (const nurseData of mockTunisianNurses) {
@@ -780,7 +804,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
             createdAt: serverTimestamp(),
           };
           console.log(`[ACTION_LOG] seedDatabase: Attempting to add nurse: ${newNurse.name}`);
-          const docRef = await addDoc(nursesCollectionRef, newNurse);
+          const docRef = await addDoc(collection(firestoreInstance, "nurses"), newNurse);
           nurseRefs.push({ id: docRef.id, name: newNurse.name, email: newNurse.email });
           seededNursesCount++;
           console.log(`[ACTION_LOG] Seeded nurse: ${newNurse.name} with ID ${docRef.id}`);
@@ -794,8 +818,8 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     } else {
       results.nurses = "Nurses collection is not empty. Skipping seeding nurses.";
       console.log("[ACTION_LOG] seedDatabase: 'nurses' collection not empty, skipping nurse seeding.");
-       const existingNurses = await getDocs(nursesCollectionRef); // Load existing nurses for refs
-        existingNurses.forEach(docSnap => {
+       const existingNursesSnapshot = await getDocs(collection(firestoreInstance, "nurses"));
+        existingNursesSnapshot.forEach(docSnap => {
             const data = docSnap.data();
             if (data.name && data.email) {
                 nurseRefs.push({ id: docSnap.id, name: data.name, email: data.email });
@@ -804,21 +828,20 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
         console.log(`[ACTION_LOG] seedDatabase: Loaded ${nurseRefs.length} existing nurse references.`);
     }
 
-    // Re-assign primary nurses if patients were seeded in this run and nurses were already present or also seeded
-    if (currentPatientsSnapshot.empty && patientRefs.length > 0 && nurseRefs.length > 0) {
+    if (patientsCount === 0 && patientRefs.length > 0 && nurseRefs.length > 0) {
         console.log("[ACTION_LOG] seedDatabase: Re-assigning primary nurses to newly seeded patients using available nurses.");
         const batch = writeBatch(firestoreInstance);
+        let updateCount = 0;
         for (const patientRef of patientRefs) {
           try {
             const patientDocSnap = await getDoc(doc(firestoreInstance, "patients", patientRef.id));
             if (patientDocSnap.exists()) {
                 const patientData = patientDocSnap.data();
-                // Only update if the nurse was the placeholder or not found in current nurseRefs
                 if (patientData.primaryNurse === "Infirmière Non Assignée" || !nurseRefs.find(n => n.name === patientData.primaryNurse)) {
                     const randomNurse = nurseRefs[Math.floor(Math.random() * nurseRefs.length)];
                     const patientDocRefToUpdate = doc(firestoreInstance, "patients", patientRef.id);
                     batch.update(patientDocRefToUpdate, { primaryNurse: randomNurse.name });
-                    console.log(`[ACTION_LOG] Queued update for patient ${patientRef.name} to nurse ${randomNurse.name}`);
+                    updateCount++;
                 }
             }
           } catch (e: any) {
@@ -827,40 +850,53 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
             allSuccess = false;
           }
         }
-        try {
-            console.log("[ACTION_LOG] seedDatabase: Committing primary nurse reassignment batch...");
-            await batch.commit();
-            console.log("[ACTION_LOG] seedDatabase: Finished re-assigning primary nurses batch commit.");
-        } catch (e: any) {
-            console.error(`[ACTION_ERROR] seedDatabase: Error committing primary nurse reassignment batch. Code: ${e.code}, Message: ${e.message}`, e);
-            results.patients += `Error committing nurse reassignments. `
-            allSuccess = false;
+        if (updateCount > 0) {
+            try {
+                console.log(`[ACTION_LOG] seedDatabase: Committing ${updateCount} primary nurse reassignments...`);
+                await batch.commit();
+                console.log("[ACTION_LOG] seedDatabase: Finished re-assigning primary nurses batch commit.");
+            } catch (e: any) {
+                console.error(`[ACTION_ERROR] seedDatabase: Error committing primary nurse reassignment batch. Code: ${e.code}, Message: ${e.message}`, e);
+                results.patients += `Error committing nurse reassignments. `
+                allSuccess = false;
+            }
+        } else {
+            console.log("[ACTION_LOG] seedDatabase: No primary nurse reassignments needed for newly seeded patients.");
         }
     }
 
 
-    // Seed Video Consultations
-    console.log("[ACTION_LOG] seedDatabase: Checking 'videoConsults' collection...");
-    const videoConsultsCollectionRef = collection(firestoreInstance, "videoConsults");
-    const currentConsultsSnapshot = await getDocs(query(videoConsultsCollectionRef, limit(1)));
-    if (currentConsultsSnapshot.empty) {
+    let videoConsultsCount = 0;
+    try {
+        console.log("[ACTION_LOG] seedDatabase: Checking 'videoConsults' collection...");
+        const videoConsultsCollectionRef = collection(firestoreInstance, "videoConsults");
+        const videoConsultsCountSnapshot = await getCountFromServer(videoConsultsCollectionRef);
+        videoConsultsCount = videoConsultsCountSnapshot.data().count;
+        console.log(`[ACTION_LOG] seedDatabase: Found ${videoConsultsCount} existing video consults.`);
+    } catch (dbError: any) {
+        console.error(`[ACTION_ERROR] seedDatabase: Could not check 'videoConsults' collection.`, dbError);
+        results.videoConsults = `Error checking 'videoConsults' collection: ${dbError.message}. `;
+        allSuccess = false;
+    }
+    
+    if (videoConsultsCount === 0) {
       console.log("[ACTION_LOG] seedDatabase: 'videoConsults' collection is empty. Attempting to seed video consults...");
       if (patientRefs.length > 0 && nurseRefs.length > 0) {
         let seededConsultsCount = 0;
-        for (let i = 0; i < Math.min(5, patientRefs.length, nurseRefs.length); i++) { // Seed up to 5 consults
+        for (let i = 0; i < Math.min(5, patientRefs.length, nurseRefs.length); i++) { 
           try {
-            const randomPatient = patientRefs[i % patientRefs.length]; // Cycle through patients
-            const randomNurse = nurseRefs[i % nurseRefs.length];   // Cycle through nurses
+            const randomPatient = patientRefs[i % patientRefs.length]; 
+            const randomNurse = nurseRefs[i % nurseRefs.length];   
 
             const consultDate = new Date();
-            consultDate.setDate(consultDate.getDate() + Math.floor(Math.random() * 30) - 15); // Random date within +/- 15 days
-            consultDate.setHours(Math.floor(Math.random() * 10) + 8, Math.random() > 0.5 ? 30 : 0, 0, 0); // Random time between 8 AM and 5:30 PM
+            consultDate.setDate(consultDate.getDate() + Math.floor(Math.random() * 30) - 15); 
+            consultDate.setHours(Math.floor(Math.random() * 10) + 8, Math.random() > 0.5 ? 30 : 0, 0, 0); 
 
             const statuses: VideoConsultListItem['status'][] = ['scheduled', 'completed', 'cancelled'];
             const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
 
             const roomName = `sanhome-consult-${generateRandomString(8)}`;
-            const dailyCoBaseUrl = process.env.NEXT_PUBLIC_DAILY_CO_BASE_URL || "https://sanhome.daily.co/"; // Use configured or fallback
+            const dailyCoBaseUrl = process.env.NEXT_PUBLIC_DAILY_CO_BASE_URL || "https://sanhome.daily.co/"; 
             const dailyRoomUrl = `${dailyCoBaseUrl.endsWith('/') ? dailyCoBaseUrl : dailyCoBaseUrl + '/'}${roomName}`;
 
             const newConsult = {
@@ -874,7 +910,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
               createdAt: serverTimestamp(),
             };
             console.log(`[ACTION_LOG] seedDatabase: Attempting to add video consult for patient ${randomPatient.name}`);
-            await addDoc(videoConsultsCollectionRef, newConsult);
+            await addDoc(collection(firestoreInstance, "videoConsults"), newConsult);
             seededConsultsCount++;
              console.log(`[ACTION_LOG] Seeded video consult for patient ${randomPatient.name} with nurse ${randomNurse.name}`);
           } catch (e: any) {
@@ -899,30 +935,30 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     } else if (!allSuccess) {
       return { success: false, message: "Database seeding completed with some errors. Check server logs for details.", details: results };
     } else {
-        // This case means no new data was seeded because collections were not empty
         return { success: true, message: "All collections appear to be populated or no new data was seeded. Check server logs for details.", details: results };
     }
 
   } catch (error: any) {
     const firebaseErrorCode = error.code || 'N/A';
     const firebaseErrorMessage = error.message || 'Unknown error';
-    let specificMessage = `Database seeding failed critically: ${firebaseErrorMessage} (Code: ${firebaseErrorCode}). Ensure Firestore/Auth rules allow writes and the API is enabled. Check server console for specific Firebase error codes.`;
-
+    let specificMessage = `Database seeding failed critically: ${firebaseErrorMessage} (Code: ${firebaseErrorCode}).`;
+    
     console.error(`[ACTION_ERROR] seedDatabase: CRITICAL error during seeding process. Code: ${firebaseErrorCode}, Message: ${firebaseErrorMessage}`, error);
-    // console.error("[ACTION_ERROR] Full error object:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    console.error("[ACTION_ERROR] Full error object:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
 
 
     if (firebaseErrorCode === 'auth/email-already-in-use') {
         specificMessage = "Database seeding failed: One or more user emails already exist in Firebase Authentication. Clear existing test users or use different emails.";
-    } else if (firebaseErrorCode === 7 || firebaseErrorCode === 'permission-denied' || firebaseErrorMessage.includes('PERMISSION_DENIED') || firebaseErrorMessage.includes("Missing or insufficient permissions")) {
+    } else if (firebaseErrorCode === 'permission-denied' || firebaseErrorMessage.includes('PERMISSION_DENIED') || firebaseErrorMessage.includes("Missing or insufficient permissions")) {
         specificMessage = "Database seeding failed: Missing or insufficient permissions. Ensure Firestore/Auth rules allow writes FOR AUTHENTICATED USERS (if rules are 'request.auth != null') and that you are logged in when triggering this. Also check project API enablement. Firebase Code: " + firebaseErrorCode;
-    }  else if (firebaseErrorMessage.includes("auth is not a function") || firebaseErrorMessage.includes("auth is not defined") || firebaseErrorMessage.includes("auth is null") || firebaseErrorMessage.includes("Firebase: Error (auth/internal-error).") ) {
+    } else if (firebaseErrorMessage.includes("auth is not a function") || firebaseErrorMessage.includes("auth is not defined") || firebaseErrorMessage.includes("auth is null") || firebaseErrorMessage.includes("Firebase: Error (auth/internal-error).") ) {
         specificMessage = "Database seeding failed: Firebase Authentication service might not be initialized correctly or available. Check Firebase setup in `lib/firebase.ts`. Firebase Message: " + firebaseErrorMessage;
     } else if (!firestoreInstance || !firebaseAuthInstance) {
          specificMessage = "Database seeding failed: Firebase services (Firestore or Auth) appear to be uninitialized within the server action. Check lib/firebase.ts and .env configuration.";
-    } else if (firebaseErrorMessage.includes("Cloud Firestore API has not been used")) {
+    } else if (firebaseErrorMessage.includes("Cloud Firestore API has not been used") || firebaseErrorMessage.includes("FIRESTORE_API_DISABLED") ) {
         specificMessage = `Database seeding failed: The Cloud Firestore API is not enabled for your project. Please visit https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'your-project-id'} to enable it.`;
     }
+
 
     return { success: false, message: specificMessage, details: results };
   }
@@ -959,7 +995,7 @@ export async function fetchPatients(): Promise<{ data?: PatientListItem[], error
         condition: data.condition || "N/A",
         status: data.status || "N/A",
         hint: data.hint || 'person face',
-        createdAt: data.createdAt, // Keep Firestore Timestamp
+        createdAt: data.createdAt, 
       } as PatientListItem;
     });
     console.log("[ACTION_LOG] fetchPatients: Firestore data mapping complete. Returning data.");
@@ -991,7 +1027,7 @@ export async function fetchNurses(): Promise<{ data?: NurseListItem[], error?: s
         avatar: data.avatar || `https://placehold.co/100x100.png?text=N`,
         status: data.status || "Available",
         hint: data.hint || 'nurse medical',
-        createdAt: data.createdAt, // Keep Firestore Timestamp
+        createdAt: data.createdAt, 
       } as NurseListItem;
     });
     console.log("[ACTION_LOG] fetchNurses: Firestore data mapping complete. Returning data.");
@@ -1014,13 +1050,15 @@ export async function fetchCollectionData(
     }
 
     const collRef = collection(firestoreInstance, collectionName);
-    // Fetch a limited number of documents, ordered by 'createdAt' if available, otherwise no specific order
-    // For 'users', we might not have 'createdAt' in the same way, so handle that.
+    
     let q;
-    if (collectionName === "users") { // Users collection might not have 'createdAt' consistently from auth seed.
-        q = query(collRef, limit(25));
-    } else {
+    if (collectionName === "users" || collectionName === "patients" || collectionName === "nurses" || collectionName === "videoConsults") {
+        // Attempt to order by createdAt if it exists, otherwise, just limit.
+        // This is a simplification; robustly checking for field existence before ordering is more complex.
+        // For 'users' collection, 'createdAt' might not exist if seeded only via Firebase Auth.
         q = query(collRef, orderBy("createdAt", "desc"), limit(25));
+    } else { 
+        q = query(collRef, limit(25));
     }
 
 
@@ -1030,7 +1068,7 @@ export async function fetchCollectionData(
 
     const documents = snapshot.docs.map((docSnap) => {
       const data = docSnap.data();
-      // Convert Firestore Timestamps to ISO strings for client-side display
+      
       const processedData: { [key: string]: any } = { id: docSnap.id };
       for (const key in data) {
         if (data[key] instanceof Timestamp) {
@@ -1045,6 +1083,10 @@ export async function fetchCollectionData(
     return { data: documents };
   } catch (error: any) {
     console.error(`[ACTION_ERROR] fetchCollectionData: Error fetching data from ${collectionName}:`, error.code, error.message, error);
+    // Provide a more specific error message if it's about a missing index for ordering
+    if (error.code === 'failed-precondition' && error.message.includes('indexes?create_composite=')) {
+        return { error: `Query requires an index. Please create the required composite index in Firestore for collection '${collectionName}' ordered by 'createdAt desc'. Firestore error: ${error.message}` };
+    }
     return { error: `Failed to fetch data from ${collectionName}: ${error.message} (Code: ${error.code || 'N/A'})` };
   }
 }

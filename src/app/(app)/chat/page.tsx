@@ -83,7 +83,7 @@ export default function ChatPage() {
 
     try {
       if (userRole === 'patient') {
-        console.log("[ChatPage] Loading contacts for PATIENT. Current User UID:", currentUser.uid);
+        console.log("[ChatPage PATIENT] Loading contacts for PATIENT. Current User UID:", currentUser.uid);
         const [patientDetailsResult, videoConsultsResult, allNursesResult, allUsersResult] = await Promise.all([
           fetchPatientById(currentUser.uid), 
           fetchVideoConsults(),
@@ -97,8 +97,8 @@ export default function ChatPage() {
         const allUsers = allUsersResult.data || [];
 
         console.log("[ChatPage PATIENT] Fetched patient details:", patient);
-        console.log("[ChatPage PATIENT] Fetched video consults:", videoConsults.filter(c => c.patientId === currentUser.uid));
-        console.log("[ChatPage PATIENT] Fetched ALL nurses (before filtering):", allNurses);
+        console.log("[ChatPage PATIENT] Fetched video consults (filtered for current patient):", videoConsults.filter(c => c.patientId === currentUser.uid));
+        console.log("[ChatPage PATIENT] Fetched ALL nurses (before filtering):", allNurses.map(n => ({id: n.id, name: n.name})));
         
         const allowedNurseIds = new Set<string>();
 
@@ -109,13 +109,14 @@ export default function ChatPage() {
             allowedNurseIds.add(primaryNurse.id);
             console.log(`[ChatPage PATIENT] Primary nurse "${primaryNurse.name}" (ID: ${primaryNurse.id}) added to allowedNurseIds.`);
           } else {
-            console.warn(`[ChatPage PATIENT] Primary nurse named "${patient.primaryNurse}" not found in allNurses list.`);
+            console.warn(`[ChatPage PATIENT] Primary nurse named "${patient.primaryNurse}" not found in allNurses list. Searched for name: "${patient.primaryNurse}". Available nurse names: ${allNurses.map(n => n.name).join(', ')}`);
           }
         }
 
         // 2. Add nurses from video consults
         videoConsults.forEach(consult => {
           if (consult.patientId === currentUser.uid && consult.nurseId) {
+            console.log(`[ChatPage PATIENT] Processing consult: Patient ${consult.patientName} with Nurse ${consult.nurseName} (Nurse ID: ${consult.nurseId}). Adding nurseId: ${consult.nurseId} to allowedNurseIds.`);
             allowedNurseIds.add(consult.nurseId);
           }
         });
@@ -128,7 +129,7 @@ export default function ChatPage() {
             avatarUrl: n.avatar || `https://placehold.co/40x40.png`,
             lastMessage: "Click to chat", hint: n.hint || 'nurse medical'
           }));
-        console.log("[ChatPage PATIENT] Final nurseContacts list for patient:", nurseContacts);
+        console.log("[ChatPage PATIENT] Final nurseContacts list for patient (filtered by allowed IDs):", nurseContacts);
 
         const adminContacts = allUsers
           .filter(u => u.role === 'admin' && u.id !== currentUser.uid)
@@ -139,10 +140,10 @@ export default function ChatPage() {
           }));
         
         combinedContacts = [...nurseContacts, ...adminContacts];
-        console.log("[ChatPage] PATIENT combined contacts (nurses + admins):", combinedContacts);
+        console.log("[ChatPage PATIENT] Combined contacts for patient (allowed nurses + admins):", combinedContacts);
 
       } else if (userRole === 'nurse') {
-        console.log("[ChatPage] Loading contacts for NURSE:", currentUser.uid, currentUser.displayName);
+        console.log("[ChatPage NURSE] Loading contacts for NURSE:", currentUser.uid, currentUser.displayName);
         const [allNursesResult, allPatientsResult, videoConsultsResult, allUsersResult] = await Promise.all([
           fetchNurses(),
           fetchPatients(),
@@ -208,10 +209,10 @@ export default function ChatPage() {
           }
         });
         combinedContacts = Array.from(tempContactsMap.values());
-        console.log("[ChatPage] NURSE contacts filtered:", combinedContacts);
+        console.log("[ChatPage NURSE] Final combined contacts for nurse:", combinedContacts);
 
       } else if (userRole === 'admin') { 
-        console.log("[ChatPage] Loading contacts for ADMIN:", currentUser.uid);
+        console.log("[ChatPage ADMIN] Loading contacts for ADMIN:", currentUser.uid);
          const [patientsResult, nursesResult, allUsersResult] = await Promise.all([
           fetchPatients(),
           fetchNurses(),
@@ -239,7 +240,7 @@ export default function ChatPage() {
           }));
 
         combinedContacts = [...patientContactsMapped, ...nurseContactsMapped, ...adminContacts];
-        console.log("[ChatPage] ADMIN contacts combined:", combinedContacts);
+        console.log("[ChatPage ADMIN] Final combined contacts for admin:", combinedContacts);
       }
       
       setContacts(combinedContacts);
@@ -257,6 +258,9 @@ export default function ChatPage() {
           if (!defaultContact) defaultContact = combinedContacts.find(c => c.role === 'nurse');
           if (!defaultContact) defaultContact = combinedContacts.find(c => c.role === 'admin');
         }
+        if (defaultContact) {
+          //setSelectedContact(defaultContact); // Commented out to avoid auto-selection if dropdowns are preferred
+        }
       }
 
     } catch (e: any) {
@@ -265,13 +269,13 @@ export default function ChatPage() {
     } finally {
       setIsLoadingContacts(false);
     }
-  }, [currentUser, userRole, selectedContact]);
+  }, [currentUser, userRole, selectedContact]); // Removed selectedContact from deps to avoid re-fetching on selection
 
   useEffect(() => {
     if (!authLoading) {
       loadContacts();
     }
-  }, [authLoading, loadContacts]);
+  }, [authLoading, loadContacts, currentUser, userRole]); // Added currentUser and userRole to ensure loadContacts has the latest
 
   // Effect to listen for messages when selectedContact (and thus currentChatId) changes
   useEffect(() => {
@@ -354,16 +358,16 @@ export default function ChatPage() {
   };
 
   const patientContactsForDropdown = useMemo(() => {
-    console.log("[ChatPage useMemo patientContactsForDropdown] Full 'contacts' list before filtering for patients:", contacts);
+    console.log("[ChatPage useMemo patientContactsForDropdown] Full 'contacts' list before filtering for patients:", contacts.map(c=> ({id: c.id, name: c.name, role: c.role})));
     const filtered = contacts.filter(contact => contact.role === 'patient' && contact.id !== currentUser?.uid);
-    console.log("[ChatPage useMemo patientContactsForDropdown] Derived patientContactsForDropdown:", filtered);
+    console.log("[ChatPage useMemo patientContactsForDropdown] Derived patientContactsForDropdown:", filtered.map(c=> ({id: c.id, name: c.name, role: c.role})));
     return filtered;
   }, [contacts, currentUser]);
 
   const nurseContactsForDropdown = useMemo(() => {
-    console.log("[ChatPage useMemo nurseContactsForDropdown] Full 'contacts' list before filtering for nurses:", contacts);
+    console.log("[ChatPage useMemo nurseContactsForDropdown] Full 'contacts' list before filtering for nurses:", contacts.map(c=> ({id: c.id, name: c.name, role: c.role})));
     const filtered = contacts.filter(contact => contact.role === 'nurse' && contact.id !== currentUser?.uid);
-    console.log("[ChatPage useMemo nurseContactsForDropdown] Derived nurseContactsForDropdown:", filtered);
+    console.log("[ChatPage useMemo nurseContactsForDropdown] Derived nurseContactsForDropdown:", filtered.map(c=> ({id: c.id, name: c.name, role: c.role})));
     return filtered;
   }, [contacts, currentUser]);
 
@@ -476,11 +480,13 @@ export default function ChatPage() {
                 <Avatar className="h-10 w-10 relative">
                   <AvatarImage src={contact.avatarUrl} alt={contact.name} data-ai-hint={contact.hint} />
                   <AvatarFallback>{contact.name?.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                  {/* Add online indicator if needed */}
                 </Avatar>
                 <div className="flex-1">
                   <p className="font-semibold text-sm">{contact.name} <span className="text-xs text-muted-foreground">({contact.role})</span></p>
                   <p className="text-xs text-muted-foreground truncate">{contact.lastMessage}</p>
                 </div>
+                {/* Add unread count badge if needed */}
               </div>
             ))}
           </CardContent>
@@ -504,6 +510,7 @@ export default function ChatPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                  {/* Add call/video call buttons if functionality is implemented */}
                   <Button variant="ghost" size="icon" aria-label="Call"><Phone className="h-5 w-5"/></Button>
                   <Button variant="ghost" size="icon" aria-label="Video Call"><Video className="h-5 w-5"/></Button>
               </div>

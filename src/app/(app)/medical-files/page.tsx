@@ -141,7 +141,11 @@ export default function MedicalFilesPage() {
       const doc = new jsPDF();
       let yPos = 20;
       const margin = 15;
+      const pageWidth = doc.internal.pageSize.width;
       const pageHeight = doc.internal.pageSize.height;
+      const lineSpacing = 6;
+      const sectionSpacing = 10;
+
       const addPageIfNeeded = (spaceNeeded: number = 20) => {
         if (yPos + spaceNeeded > pageHeight - margin) {
           doc.addPage();
@@ -149,40 +153,96 @@ export default function MedicalFilesPage() {
         }
       };
       
-      doc.setFontSize(18);
-      doc.text(`Medical Report for ${patient.name || 'N/A'}`, margin, yPos);
-      yPos += 10;
-
-      doc.setFontSize(10);
-      doc.text(`Report Generated On: ${format(new Date(), "PPpp")}`, margin, yPos);
-      yPos += 10;
-      addPageIfNeeded();
-
-      doc.setFontSize(12);
-      doc.text(`Patient ID: ${patient.id || 'N/A'}`, margin, yPos); yPos += 7;
-      doc.text(`Age: ${patient.age || 'N/A'}`, margin, yPos); yPos += 7;
-      doc.text(`Email: ${patient.email || 'N/A'}`, margin, yPos); yPos += 7;
-      doc.text(`Phone: ${patient.phone || 'N/A'}`, margin, yPos); yPos += 7;
-      doc.text(`Address: ${patient.address || 'N/A'}`, margin, yPos); yPos += 10;
+      // Header
+      doc.setFontSize(20);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Medical Report`, pageWidth / 2, yPos, { align: 'center' });
+      yPos += lineSpacing * 1.5;
       addPageIfNeeded();
 
       doc.setFontSize(14);
-      doc.text("Medical History (Summary)", margin, yPos); yPos += 7;
+      doc.setFont("helvetica", "normal");
+      doc.text(`Patient: ${patient.name || 'N/A'}`, pageWidth / 2, yPos, { align: 'center' });
+      yPos += lineSpacing;
+      addPageIfNeeded();
+
       doc.setFontSize(10);
-      doc.text(`Mobility: ${patient.mobilityStatus || 'N/A'}`, margin, yPos); yPos += 5;
-      doc.text(`Pathologies: ${(Array.isArray(patient.pathologies) && patient.pathologies.length > 0) ? patient.pathologies.join(', ') : 'None reported'}`, margin, yPos); yPos += 5;
-      doc.text(`Allergies: ${(Array.isArray(patient.allergies) && patient.allergies.length > 0) ? patient.allergies.join(', ') : 'None reported'}`, margin, yPos); yPos += 10;
+      doc.setTextColor(100); // Grey color for subtitle
+      doc.text(`Report Generated On: ${format(new Date(), "PPpp")}`, pageWidth / 2, yPos, { align: 'center' });
+      yPos += sectionSpacing * 1.5;
+      addPageIfNeeded();
+      doc.setTextColor(0); // Reset text color to black
+
+      // Patient Information Section
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Patient Information", margin, yPos);
+      yPos += lineSpacing * 0.5;
+      doc.setLineWidth(0.2);
+      doc.line(margin, yPos, pageWidth - margin, yPos); // Underline
+      yPos += lineSpacing * 1.5;
+      addPageIfNeeded();
+
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      const addInfoLine = (label: string, value: string) => {
+        doc.setFont("helvetica", "bold");
+        doc.text(`${label}:`, margin, yPos);
+        doc.setFont("helvetica", "normal");
+        doc.text(value || 'N/A', margin + 35, yPos); // Adjust indent as needed
+        yPos += lineSpacing;
+        addPageIfNeeded();
+      };
+
+      addInfoLine("Patient ID", patient.id);
+      addInfoLine("Age", patient.age ? patient.age.toString() : 'N/A');
+      addInfoLine("Email", patient.email);
+      addInfoLine("Phone", patient.phone);
+      addInfoLine("Address", patient.address);
+      yPos += sectionSpacing * 0.5; // Extra space after section
+      addPageIfNeeded();
+
+      // Medical History Section
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Medical Summary", margin, yPos);
+      yPos += lineSpacing * 0.5;
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += lineSpacing * 1.5;
+      addPageIfNeeded();
+
+      doc.setFontSize(11);
+      addInfoLine("Mobility", patient.mobilityStatus);
+      addInfoLine("Pathologies", (Array.isArray(patient.pathologies) && patient.pathologies.length > 0) ? patient.pathologies.join(', ') : 'None reported');
+      addInfoLine("Allergies", (Array.isArray(patient.allergies) && patient.allergies.length > 0) ? patient.allergies.join(', ') : 'None reported');
+      yPos += sectionSpacing * 0.5;
       addPageIfNeeded();
       
+      // Current Medications Placeholder Section
       doc.setFontSize(14);
-      doc.text("Current Medications (Placeholder)", margin, yPos); yPos += 7;
-      doc.setFontSize(10);
-      doc.text("Detailed medication list would be populated here from patient records.", margin, yPos); yPos += 10;
+      doc.setFont("helvetica", "bold");
+      doc.text("Current Medications (Placeholder)", margin, yPos);
+      yPos += lineSpacing * 0.5;
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += lineSpacing * 1.5;
       addPageIfNeeded();
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "italic");
+      doc.text("Detailed medication list would be populated here from patient records.", margin, yPos, { maxWidth: pageWidth - margin * 2 });
+      yPos += sectionSpacing;
+      addPageIfNeeded();
+      doc.setFont("helvetica", "normal");
 
+
+      // Medical Files Section
+      addPageIfNeeded(patientFiles.length * 8 + 30); // Estimate space for table + header
       doc.setFontSize(14);
-      doc.text("Medical Files", margin, yPos); yPos += 7;
-      addPageIfNeeded(patientFiles.length * 8 + 20); 
+      doc.setFont("helvetica", "bold");
+      doc.text("Medical Files", margin, yPos);
+      yPos += lineSpacing * 0.5;
+      doc.line(margin, yPos, pageWidth - margin, yPos);
+      yPos += lineSpacing * 1.5;
+      addPageIfNeeded();
 
       if (patientFiles.length > 0) {
         const tableColumn = ["File Name", "Type", "Date Uploaded", "Size (MB)"];
@@ -196,9 +256,10 @@ export default function MedicalFilesPage() {
           head: [tableColumn],
           body: tableRows,
           startY: yPos,
-          theme: 'grid',
-          headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontSize: 10 },
+          theme: 'grid', // 'striped', 'grid', 'plain'
+          headStyles: { fillColor: [220, 220, 220], textColor: [0,0,0], fontSize: 10, fontStyle: 'bold' },
           bodyStyles: { fontSize: 9 },
+          alternateRowStyles: { fillColor: [245, 245, 245] },
           margin: { left: margin, right: margin },
           didDrawPage: (data: any) => {
             yPos = data.cursor.y + 10; 
@@ -206,9 +267,20 @@ export default function MedicalFilesPage() {
         });
       } else {
         doc.setFontSize(10);
-        doc.text("No medical files found for this patient.", margin, yPos); yPos += 7;
+        doc.text("No medical files found for this patient.", margin, yPos);
+        yPos += lineSpacing;
       }
       
+      // Footer (simple page number)
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 10, pageHeight - 10, {align: 'right'});
+      }
+
+
       doc.save(`medical_report_${(patient.name || 'patient').replace(/\s/g, '_')}_${patient.id}.pdf`);
       toast({ title: "PDF Generated", description: "Report downloaded successfully." });
 
@@ -381,3 +453,4 @@ export default function MedicalFilesPage() {
     </div>
   );
 }
+

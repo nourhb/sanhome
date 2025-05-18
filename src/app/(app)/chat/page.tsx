@@ -53,20 +53,20 @@ export default function ChatPage() {
       if (result.data) {
         const fetchedContacts: Contact[] = result.data.map(user => ({
           ...user,
-          avatarPath: `https://placehold.co/40x40.png?text=${user.name.split(' ').map(n => n[0]).join('')}`, 
+          avatarPath: `https://placehold.co/40x40.png`, // Removed text query param, rely on data-ai-hint
           lastMessage: "Click to start a conversation...", 
           unread: Math.floor(Math.random() * 3), 
           online: Math.random() > 0.5, 
           hint: 'person ' + (user.name.split(' ')[0] || 'contact').toLowerCase(),
         }));
         setContacts(fetchedContacts);
-        console.log("[ChatPage] Initial contacts loaded:", fetchedContacts); // Log initial contacts
+        console.log("[ChatPage] Initial contacts loaded:", fetchedContacts); 
         if (fetchedContacts.length > 0) {
           let defaultContact = fetchedContacts[0];
           if (userRole === 'patient') {
-            defaultContact = fetchedContacts.find(c => c.role === 'nurse' && c.id !== currentUser.uid) || fetchedContacts.find(c => c.id !== currentUser.uid) || fetchedContacts[0];
+            defaultContact = fetchedContacts.find(c => c.role === 'nurse' && (!currentUser || c.id !== currentUser.uid)) || fetchedContacts.find(c => (!currentUser || c.id !== currentUser.uid)) || fetchedContacts[0];
           } else {
-            defaultContact = fetchedContacts.find(c => c.id !== currentUser.uid) || fetchedContacts[0];
+            defaultContact = fetchedContacts.find(c => (!currentUser || c.id !== currentUser.uid)) || fetchedContacts[0];
           }
           setSelectedContact(defaultContact);
         }
@@ -92,7 +92,7 @@ export default function ChatPage() {
 
     if (currentUser && userRole) {
       const lowerCaseTrimmedSearchTerm = searchTerm.trim().toLowerCase();
-      console.log("[ChatPage] Search: lowerCaseTrimmedSearchTerm:", lowerCaseTrimmedSearchTerm);
+      console.log(`[ChatPage] Search: currentUser.uid: ${currentUser.uid}, userRole: ${userRole}, raw searchTerm: '${searchTerm}', processedSearchTerm: '${lowerCaseTrimmedSearchTerm}'`);
 
       if (!lowerCaseTrimmedSearchTerm) {
          const allVisibleContacts = contacts.filter(contact => {
@@ -114,16 +114,16 @@ export default function ChatPage() {
         
         const matchesSearchTerm = contactName.includes(lowerCaseTrimmedSearchTerm) || contactEmail.includes(lowerCaseTrimmedSearchTerm);
         
-        console.log(`[ChatPage] Search: Checking contact: ${contact.name} (Role: ${contact.role}, Email: ${contact.email}). Name matches '${lowerCaseTrimmedSearchTerm}'? ${contactName.includes(lowerCaseTrimmedSearchTerm)}. Email matches? ${contactEmail.includes(lowerCaseTrimmedSearchTerm)}`);
+        console.log(`[ChatPage] Search: Checking contact: '${contact.name}' (Role: ${contact.role}, Email: ${contact.email}). Name matches '${lowerCaseTrimmedSearchTerm}'? ${contactName.includes(lowerCaseTrimmedSearchTerm)}. Email matches? ${contactEmail.includes(lowerCaseTrimmedSearchTerm)}`);
 
         if (!matchesSearchTerm) return false;
 
         if (userRole === 'admin' || userRole === 'nurse') {
-          console.log(`[ChatPage] Search: Admin/Nurse - Matched and visible: ${contact.name}`);
+          console.log(`[ChatPage] Search (Admin/Nurse Role): Matched and visible: '${contact.name}'`);
           return true; 
         } else if (userRole === 'patient') {
           const isNurse = contact.role === 'nurse';
-          console.log(`[ChatPage] Search: Patient - Matched ${contact.name}. Is Nurse? ${isNurse}`);
+          console.log(`[ChatPage] Search (Patient Role): Matched '${contact.name}' (Role: ${contact.role}). Is Nurse? ${isNurse}. Visible to patient? ${isNurse}`);
           return isNurse; 
         }
         return false; 

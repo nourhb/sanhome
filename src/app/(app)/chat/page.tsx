@@ -8,7 +8,7 @@ import { Send, MessageSquarePlus, Paperclip, Phone, Video, Loader2, AlertCircle,
 import { ScrollArea } from "@/components/ui/scroll-area";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import { fetchPatients, fetchNurses, type PatientListItem, type NurseListItem } from "@/app/actions";
+import { fetchPatients, fetchNurses, fetchUsersForAdmin, fetchVideoConsults, fetchPatientById, type PatientListItem, type NurseListItem, type UserForAdminList, type VideoConsultListItem } from "@/app/actions";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -79,68 +79,176 @@ export default function ChatPage() {
     }
     setIsLoadingContacts(true);
     setErrorContacts(null);
+    let combinedContacts: Contact[] = [];
+
     try {
-      const [patientsResult, nursesResult] = await Promise.all([
-        fetchPatients(),
-        fetchNurses()
-      ]);
+      if (userRole === 'patient') {
+        console.log("[ChatPage] Loading contacts for PATIENT:", currentUser.uid);
+        const [patientDetailsResult, videoConsultsResult, allNursesResult, allUsersResult] = await Promise.all([
+          fetchPatientById(currentUser.uid), // Patient's own details to find primaryNurse name
+          fetchVideoConsults(),
+          fetchNurses(),
+          fetchUsersForAdmin()
+        ]);
 
-      let combinedContacts: Contact[] = [];
+        const patient = patientDetailsResult.data;
+        const videoConsults = videoConsultsResult.data || [];
+        const allNurses = allNursesResult.data || [];
+        const allUsers = allUsersResult.data || [];
+        
+        const allowedNurseIds = new Set<string>();
 
-      if (patientsResult.data) {
-        const patientContactsMapped: Contact[] = patientsResult.data.map(p => ({
-          id: p.id, // Patient's own ID from 'patients' collection
-          name: p.name,
-          email: p.email,
-          role: 'patient',
+        // 1. Add primary nurse
+        if (patient && patient.primaryNurse) {
+          const primaryNurse = allNurses.find(n => n.name === patient.primaryNurse);
+          if (primaryNurse) allowedNurseIds.add(primaryNurse.id);
+        }
+
+        // 2. Add nurses from video consults
+        videoConsults.forEach(consult => {
+          if (consult.patientId === currentUser.uid && consult.nurseId) {
+            allowedNurseIds.add(consult.nurseId);
+          }
+        });
+        
+        const nurseContacts = allNurses
+          .filter(n => allowedNurseIds.has(n.id))
+          .map(n => ({
+            id: n.id, name: n.name, email: n.email, role: 'nurse' as const,
+            avatarUrl: n.avatar || `https://placehold.co/40x40.png`,
+            lastMessage: "Click to chat", hint: n.hint || 'nurse medical'
+          }));
+
+        const adminContacts = allUsers
+          .filter(u => u.role === 'admin' && u.id !== currentUser.uid)
+          .map(u => ({
+            id: u.id, name: u.name, email: u.email, role: 'admin' as const,
+            avatarUrl: (u as any).avatarUrl || `https://placehold.co/40x40.png`, // Assuming admin might have avatarUrl
+            lastMessage: "Click to chat", hint: (u as any).hint || 'admin support'
+          }));
+        
+        combinedContacts = [...nurseContacts, ...adminContacts];
+        console.log("[ChatPage] PATIENT contacts filtered:", combinedContacts);
+
+      } else if (userRole === 'nurse') {
+        console.log("[ChatPage] Loading contacts for NURSE:", currentUser.uid, currentUser.displayName);
+        const [allNursesResult, allPatientsResult, videoConsultsResult, allUsersResult] = await Promise.all([
+          fetchNurses(),
+          fetchPatients(),
+          fetchVideoConsults(),
+          fetchUsersForAdmin()
+        ]);
+
+        const allNurses = allNursesResult.data || [];
+        const allPatients = allPatientsResult.data || [];
+        const videoConsults = videoConsultsResult.data || [];
+        const allUsers = allUsersResult.data || [];
+
+        const tempContactsMap = new Map<string, Contact>();
+
+        // 1. Add other nurses
+        allNurses.forEach(n => {
+          if (n.id !== currentUser.uid) {
+            tempContactsMap.set(n.id, {
+              id: n.id, name: n.name, email: n.email, role: 'nurse' as const,
+              avatarUrl: n.avatar || `https://placehold.co/40x40.png`,
+              lastMessage: "Click to chat", hint: n.hint || 'nurse medical'
+            });
+          }
+        });
+
+        // 2. Add admins
+        allUsers.forEach(u => {
+          if (u.role === 'admin' && u.id !== currentUser.uid) {
+            tempContactsMap.set(u.id, {
+              id: u.id, name: u.name, email: u.email, role: 'admin' as const,
+              avatarUrl: (u as any).avatarUrl || `https://placehold.co/40x40.png`,
+              lastMessage: "Click to chat", hint: (u as any).hint || 'admin support'
+            });
+          }
+        });
+        
+        // 3. Add patients assigned to this nurse
+        allPatients.forEach(p => {
+          if (p.primaryNurse === currentUser.displayName) { // Match by name, less robust
+             tempContactsMap.set(p.id, {
+              id: p.id, name: p.name, email: p.email, role: 'patient' as const,
+              avatarUrl: p.avatarUrl || `https://placehold.co/40x40.png`,
+              lastMessage: "Click to chat", hint: p.hint || 'person face'
+            });
+          }
+        });
+
+        // 4. Add patients with appointments with this nurse
+        const patientIdsFromAppointments = new Set<string>();
+        videoConsults.forEach(consult => {
+          if (consult.nurseId === currentUser.uid && consult.patientId) {
+            patientIdsFromAppointments.add(consult.patientId);
+          }
+        });
+
+        allPatients.forEach(p => {
+          if (patientIdsFromAppointments.has(p.id)) {
+             tempContactsMap.set(p.id, { // Will overwrite if already added by primaryNurse, which is fine
+              id: p.id, name: p.name, email: p.email, role: 'patient' as const,
+              avatarUrl: p.avatarUrl || `https://placehold.co/40x40.png`,
+              lastMessage: "Click to chat", hint: p.hint || 'person face'
+            });
+          }
+        });
+        combinedContacts = Array.from(tempContactsMap.values());
+        console.log("[ChatPage] NURSE contacts filtered:", combinedContacts);
+
+      } else if (userRole === 'admin') { // Admin sees all patients and nurses (excluding self if admin is also a nurse type)
+        console.log("[ChatPage] Loading contacts for ADMIN:", currentUser.uid);
+         const [patientsResult, nursesResult, allUsersResult] = await Promise.all([
+          fetchPatients(),
+          fetchNurses(),
+          fetchUsersForAdmin()
+        ]);
+
+        const patientContactsMapped: Contact[] = (patientsResult.data || []).map(p => ({
+          id: p.id, name: p.name, email: p.email, role: 'patient' as const,
           avatarUrl: p.avatarUrl || `https://placehold.co/40x40.png`,
-          lastMessage: "Click to start conversation",
-          hint: p.hint || 'person face',
+          lastMessage: "Click to start conversation", hint: p.hint || 'person face',
         }));
-        combinedContacts = [...combinedContacts, ...patientContactsMapped];
-      } else {
-        console.warn("[ChatPage] Failed to load patients for chat:", patientsResult.error);
-        setErrorContacts(prev => prev ? `${prev} Failed to load patients.` : "Failed to load patients.");
-      }
 
-      if (nursesResult.data) {
-        const nurseContactsMapped: Contact[] = nursesResult.data.map(n => ({
-          id: n.id, // Nurse's own ID from 'nurses' collection
-          name: n.name,
-          email: n.email,
-          role: 'nurse',
+        const nurseContactsMapped: Contact[] = (nursesResult.data || []).filter(n => n.id !== currentUser.uid).map(n => ({
+          id: n.id, name: n.name, email: n.email, role: 'nurse' as const,
           avatarUrl: n.avatar || `https://placehold.co/40x40.png`,
-          lastMessage: "Click to start conversation",
-          hint: n.hint || 'nurse medical',
+          lastMessage: "Click to start conversation", hint: n.hint || 'nurse medical',
         }));
-        combinedContacts = [...combinedContacts, ...nurseContactsMapped];
-      } else {
-         console.warn("[ChatPage] Failed to load nurses for chat:", nursesResult.error);
-         setErrorContacts(prev => prev ? `${prev} Failed to load nurses.` : "Failed to load nurses.");
+        
+        // Add other admins
+        const adminContacts = (allUsersResult.data || [])
+          .filter(u => u.role === 'admin' && u.id !== currentUser.uid)
+          .map(u => ({
+            id: u.id, name: u.name, email: u.email, role: 'admin' as const,
+            avatarUrl: (u as any).avatarUrl || `https://placehold.co/40x40.png`,
+            lastMessage: "Click to chat", hint: (u as any).hint || 'admin support'
+          }));
+
+        combinedContacts = [...patientContactsMapped, ...nurseContactsMapped, ...adminContacts];
+        console.log("[ChatPage] ADMIN contacts combined:", combinedContacts);
       }
       
       setContacts(combinedContacts);
-      console.log("[ChatPage] Combined contacts from patients & nurses collections:", combinedContacts);
 
       if (combinedContacts.length > 0 && !selectedContact) {
         let defaultContact: Contact | undefined;
          if (userRole === 'patient') {
           defaultContact = combinedContacts.find(c => c.role === 'nurse');
-        } else { // admin or nurse
+        } else if (userRole === 'nurse') {
           defaultContact = combinedContacts.find(c => c.role === 'patient');
-          if (!defaultContact) {
-            defaultContact = combinedContacts.find(c => c.role === 'nurse' && c.id !== currentUser?.uid);
-          }
+          if (!defaultContact) defaultContact = combinedContacts.find(c => c.role === 'admin');
+          if (!defaultContact) defaultContact = combinedContacts.find(c => c.role === 'nurse'); // other nurse
+        } else { // admin
+          defaultContact = combinedContacts.find(c => c.role === 'patient');
+          if (!defaultContact) defaultContact = combinedContacts.find(c => c.role === 'nurse');
+          if (!defaultContact) defaultContact = combinedContacts.find(c => c.role === 'admin');
         }
-        if (!defaultContact && combinedContacts.length > 0) {
-           defaultContact = combinedContacts[0]?.id !== currentUser?.uid ? combinedContacts[0] : (combinedContacts[1] || null);
-        }
-
         if (defaultContact) {
-            // We don't auto-select from dropdowns, but user can click a contact from list
-            // setSelectedContact(defaultContact); 
-            // if (defaultContact.role === 'patient') setSelectedPatientIdFromDropdown(defaultContact.id);
-            // if (defaultContact.role === 'nurse') setSelectedNurseIdFromDropdown(defaultContact.id);
+            // setSelectedContact(defaultContact); // Don't auto-select, let user pick
         }
       }
 
@@ -165,12 +273,6 @@ export default function ChatPage() {
       setMessages([]);
       return;
     }
-
-    // IMPORTANT: For chat, the 'id' of a contact from 'patients' or 'nurses' collection
-    // might not be their Firebase Auth UID. Chat should ideally be between Firebase Auth UIDs.
-    // This simplified version assumes selectedContact.id IS the other user's UID for chat.
-    // A more robust system would map patient/nurse IDs to their auth UIDs if they are also users.
-    // For now, we use selectedContact.id as the other participant's ID.
     const chatId = generateChatId(currentUser.uid, selectedContact.id);
     setCurrentChatId(chatId);
 
@@ -196,11 +298,10 @@ export default function ChatPage() {
       setErrorContacts("Failed to load messages for this chat.");
     });
 
-    return () => unsubscribe(); // Cleanup listener on component unmount or when chatId changes
+    return () => unsubscribe();
 
   }, [currentUser, selectedContact]);
 
-  // Scroll to bottom of messages when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -215,48 +316,49 @@ export default function ChatPage() {
     setNewMessage("");
 
     try {
-      // Add message to subcollection
       const messagesColRef = collection(db, "chats", currentChatId, "messages");
       await addDoc(messagesColRef, {
         senderId: currentUser.uid,
-        receiverId: selectedContact.id, // Assuming selectedContact.id is the other user's UID
+        receiverId: selectedContact.id, 
         text: messageText,
         timestamp: serverTimestamp(),
       });
 
-      // Update/create parent chat document
       const chatDocRef = doc(db, "chats", currentChatId);
       await setDoc(chatDocRef, {
         participants: [currentUser.uid, selectedContact.id].sort(),
         lastActivity: serverTimestamp(),
-        // You could also store lastMessageText snippet here for chat list previews
-        // participantNames: { [currentUser.uid]: currentUser.displayName || currentUser.email, [selectedContact.id]: selectedContact.name }
-      }, { merge: true }); // Merge true to create if not exists, or update lastActivity
+        participantNames: { 
+          [currentUser.uid]: currentUser.displayName || currentUser.email, 
+          [selectedContact.id]: selectedContact.name 
+        },
+        participantRoles: {
+          [currentUser.uid]: userRole,
+          [selectedContact.id]: selectedContact.role
+        }
+      }, { merge: true });
 
     } catch (error) {
       console.error("Error sending message:", error);
-      // Optionally, re-add message to input or show error toast
-      setNewMessage(messageText); // Put message back if sending failed
+      setNewMessage(messageText); 
     } finally {
       setIsSending(false);
     }
   };
 
-
   const patientContactsForDropdown = useMemo(() => {
-    console.log("[ChatPage useMemo patientContactsForDropdown] Full 'contacts' list:", contacts);
+    console.log("[ChatPage useMemo patientContactsForDropdown] Full 'contacts' list before filtering for patients:", contacts);
     const filtered = contacts.filter(contact => contact.role === 'patient' && contact.id !== currentUser?.uid);
     console.log("[ChatPage useMemo patientContactsForDropdown] Derived patientContactsForDropdown:", filtered);
     return filtered;
   }, [contacts, currentUser]);
 
   const nurseContactsForDropdown = useMemo(() => {
-    console.log("[ChatPage useMemo nurseContactsForDropdown] Full 'contacts' list:", contacts);
+    console.log("[ChatPage useMemo nurseContactsForDropdown] Full 'contacts' list before filtering for nurses:", contacts);
     const filtered = contacts.filter(contact => contact.role === 'nurse' && contact.id !== currentUser?.uid);
     console.log("[ChatPage useMemo nurseContactsForDropdown] Derived nurseContactsForDropdown:", filtered);
     return filtered;
   }, [contacts, currentUser]);
-
 
   const handleSelectPatientFromDropdown = (patientId: string) => {
     const contact = contacts.find(c => c.id === patientId && c.role === 'patient');
@@ -306,9 +408,8 @@ export default function ChatPage() {
             <Button variant="ghost" size="icon" aria-label="New Conversation"><MessageSquarePlus className="h-5 w-5" /></Button>
           </CardTitle>
            <p className="text-xs text-muted-foreground pt-1">Select a user from the list or dropdowns to start chatting.</p>
-
-          <div className="space-y-2 pt-2">
-            {(userRole === 'admin' || userRole === 'nurse') && (
+           <div className="space-y-2 pt-2">
+            { (userRole === 'admin' || userRole === 'nurse') && (
               <Select value={selectedPatientIdFromDropdown} onValueChange={handleSelectPatientFromDropdown} disabled={isLoadingContacts}>
                 <SelectTrigger className="w-full">
                   <Users className="mr-2 h-4 w-4 text-muted-foreground" />
@@ -321,17 +422,19 @@ export default function ChatPage() {
                 </SelectContent>
               </Select>
             )}
-            <Select value={selectedNurseIdFromDropdown} onValueChange={handleSelectNurseFromDropdown} disabled={isLoadingContacts}>
-              <SelectTrigger className="w-full">
-                <Stethoscope className="mr-2 h-4 w-4 text-muted-foreground" />
-                <SelectValue placeholder="Select a Nurse..." />
-              </SelectTrigger>
-              <SelectContent>
-                 {nurseContactsForDropdown.length > 0 ? nurseContactsForDropdown.map(n => (
-                  <SelectItem key={n.id} value={n.id}>{n.name} (Nurse)</SelectItem>
-                )) : <div className="p-2 text-sm text-muted-foreground">No nurses found.</div>}
-              </SelectContent>
-            </Select>
+             { (userRole === 'admin' || userRole === 'nurse' || userRole === 'patient') && (
+                <Select value={selectedNurseIdFromDropdown} onValueChange={handleSelectNurseFromDropdown} disabled={isLoadingContacts}>
+                <SelectTrigger className="w-full">
+                    <Stethoscope className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <SelectValue placeholder="Select a Nurse..." />
+                </SelectTrigger>
+                <SelectContent>
+                    {nurseContactsForDropdown.length > 0 ? nurseContactsForDropdown.map(n => (
+                    <SelectItem key={n.id} value={n.id}>{n.name} (Nurse)</SelectItem>
+                    )) : <div className="p-2 text-sm text-muted-foreground">No nurses found.</div>}
+                </SelectContent>
+                </Select>
+             )}
           </div>
         </CardHeader>
         <ScrollArea className="flex-grow">
@@ -349,14 +452,9 @@ export default function ChatPage() {
               </Alert>
             )}
             {!isLoadingContacts && !errorContacts && contacts.length === 0 && (
-              <p className="p-4 text-center text-muted-foreground">No patients or nurses available for chat.</p>
+              <p className="p-4 text-center text-muted-foreground">No contacts available for chat based on your role and connections.</p>
             )}
-            {!isLoadingContacts && !errorContacts && contacts.filter(c => {
-                if (!currentUser) return false;
-                if (c.id === currentUser.uid) return false; 
-                if (userRole === 'patient') return c.role === 'nurse';
-                return true;
-            }).map(contact => (
+            {!isLoadingContacts && !errorContacts && contacts.map(contact => ( // Display all contacts from the filtered list
               <div
                 key={contact.id}
                 className={`flex items-center gap-3 p-3 border-b hover:bg-accent/50 cursor-pointer ${selectedContact?.id === contact.id ? 'bg-accent' : ''}`}
@@ -368,13 +466,11 @@ export default function ChatPage() {
                 <Avatar className="h-10 w-10 relative">
                   <AvatarImage src={contact.avatarUrl} alt={contact.name} data-ai-hint={contact.hint} />
                   <AvatarFallback>{contact.name?.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                  {/* Online status removed for simplicity, can be re-added with presence system */}
                 </Avatar>
                 <div className="flex-1">
                   <p className="font-semibold text-sm">{contact.name} <span className="text-xs text-muted-foreground">({contact.role})</span></p>
                   <p className="text-xs text-muted-foreground truncate">{contact.lastMessage}</p>
                 </div>
-                {/* Unread count removed for simplicity */}
               </div>
             ))}
           </CardContent>
@@ -393,7 +489,7 @@ export default function ChatPage() {
                 <div>
                   <CardTitle>{selectedContact.name}</CardTitle>
                   <CardDescription className="text-muted-foreground">
-                    Chatting as {currentUser.displayName || currentUser.email}
+                    Chatting as {currentUser.displayName || currentUser.email} ({userRole})
                   </CardDescription>
                 </div>
               </div>
@@ -437,19 +533,17 @@ export default function ChatPage() {
       ) : (
         <Card className="flex-1 shadow-lg flex flex-col items-center justify-center bg-muted/30">
             <MessageSquarePlus className="h-16 w-16 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">Select a patient or nurse to start chatting.</p>
+            <p className="text-muted-foreground">Select a contact to start chatting.</p>
             {isLoadingContacts && <p className="text-sm text-muted-foreground mt-2">Loading contacts...</p>}
              {!isLoadingContacts && !errorContacts && contacts.length > 0 && !selectedContact && (
                 <p className="text-sm text-muted-foreground mt-2">Use the dropdowns or click on a contact from the list.</p>
             )}
             {!isLoadingContacts && !errorContacts && contacts.length === 0 && (
-                <p className="text-sm text-muted-foreground mt-2">No patients or nurses found in the database to chat with.</p>
+                <p className="text-sm text-muted-foreground mt-2">No contacts found based on your role and connections.</p>
             )}
         </Card>
       )}
     </div>
   );
 }
-    
-
     

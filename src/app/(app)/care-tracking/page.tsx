@@ -20,6 +20,7 @@ import type { CareLogItem, PatientListItem, AddCareLogFormValues } from "@/app/a
 import { fetchCareLogs, fetchPatients, addCareLog } from "@/app/actions";
 import { format, parseISO } from "date-fns";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"; // Added import
 
 const careLogFormSchema = z.object({
   patientId: z.string().min(1, { message: "Patient selection is required." }),
@@ -140,64 +141,74 @@ export default function CareTrackingPage() {
            <div className="grid md:grid-cols-3 gap-6">
             <div className="md:col-span-1 space-y-4 p-4 border rounded-lg shadow-sm bg-card">
               <h3 className="text-lg font-semibold flex items-center"><PlusCircle className="mr-2 h-5 w-5 text-primary" /> Log New Care Activity</h3>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-                <FormField
-                  control={form.control}
-                  name="patientId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <Label htmlFor="patient">Patient</Label>
-                      <Select onValueChange={field.onChange} value={field.value} disabled={patients.length === 0 || isLoading}>
-                        <SelectTrigger id="patient">
-                          <SelectValue placeholder={patients.length === 0 ? "No patients available" : "Select Patient"} />
-                        </SelectTrigger>
-                        <SelectContent>{patients.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="careType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <Label htmlFor="care-type">Type of Care</Label>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger id="care-type"><SelectValue placeholder="Select Care Type" /></SelectTrigger>
-                        <SelectContent>{careTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                 <FormField
-                  control={form.control}
-                  name="careDateTime"
-                  render={({ field }) => (
-                    <FormItem>
-                      <Label htmlFor="care-date">Date & Time</Label>
-                      <Input type="datetime-local" id="care-date" {...field} />
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <Label htmlFor="notes">Notes / Vitals</Label>
-                      <Textarea id="notes" placeholder="Enter details, observations, vitals..." rows={4} {...field} />
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button type="submit" className="w-full" disabled={formIsLoading || isLoading}>
-                  {formIsLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Add Care Log
-                </Button>
-              </form>
+              <Form {...form}> {/* Added Form wrapper */}
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+                  <FormField
+                    control={form.control}
+                    name="patientId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="patient">Patient</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value} disabled={patients.length === 0 || isLoading}>
+                          <FormControl>
+                            <SelectTrigger id="patient">
+                              <SelectValue placeholder={patients.length === 0 ? "No patients available" : "Select Patient"} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>{patients.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="careType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="care-type">Type of Care</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger id="care-type"><SelectValue placeholder="Select Care Type" /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>{careTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                   <FormField
+                    control={form.control}
+                    name="careDateTime"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="care-date">Date & Time</FormLabel>
+                        <FormControl>
+                          <Input type="datetime-local" id="care-date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel htmlFor="notes">Notes / Vitals</FormLabel>
+                        <FormControl>
+                          <Textarea id="notes" placeholder="Enter details, observations, vitals..." rows={4} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button type="submit" className="w-full" disabled={formIsLoading || isLoading}>
+                    {formIsLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Add Care Log
+                  </Button>
+                </form>
+              </Form> {/* Added Form wrapper closing tag */}
             </div>
             <div className="md:col-span-2">
               <div className="flex justify-between items-center mb-3">
@@ -251,3 +262,5 @@ export default function CareTrackingPage() {
     </div>
   );
 }
+
+    

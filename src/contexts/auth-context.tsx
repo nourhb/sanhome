@@ -16,8 +16,8 @@ import {
   signOut,
   sendEmailVerification
 } from "firebase/auth";
-import { auth, db } from "@/lib/firebase"; // Import db
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"; // Import Firestore functions
+import { auth, db } from '@/lib/firebase'; // Import db
+import { doc, getDoc, setDoc, serverTimestamp, Timestamp } from "firebase/firestore"; // Import Firestore functions
 
 // Define types for login and signup form values if not already available
 // For now, using simple email/password structure
@@ -72,13 +72,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userDocSnap = await getDoc(userDocRef);
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data();
-          setCurrentUser({ ...user, appRole: userData.role } as AppUser);
-          setUserRole(userData.role || null); // Set the role based on Firestore data 
+          // Role is fetched from the user's document in the 'users' collection in Firestore.
+          // This 'role' field is set during signup or can be manually edited in Firestore.
+          setCurrentUser({ ...user, appRole: userData.role || 'patient' } as AppUser); // Default appRole
+          setUserRole(userData.role || 'patient'); // Default userRole to 'patient' if not found
         } else {
           // No custom profile yet, or role not set
           setCurrentUser(user as AppUser);
-          setUserRole(null);
-          console.warn(`No Firestore profile found for user ${user.uid} in 'users' collection, role will be null.`);
+          setUserRole('patient'); // Assign a default role if no Firestore profile exists
+          console.warn(`No Firestore profile found for user ${user.uid} in 'users' collection. Defaulting role to 'patient'.`);
         }
       } else {
         // User is signed out
@@ -113,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: values.role, // This is the role selected during signup
           phoneNumber: values.phoneNumber,
           address: values.address,
-          dateOfBirth: values.dateOfBirth, // Store as Firestore Timestamp if preferred
+          dateOfBirth: Timestamp.fromDate(values.dateOfBirth), // Store as Firestore Timestamp
           gender: values.gender,
           createdAt: serverTimestamp(),
         });

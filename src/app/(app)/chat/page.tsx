@@ -37,7 +37,7 @@ export default function ChatPage() {
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { currentUser, userRole, loading: authLoading } = useAuth(); // Added userRole
+  const { currentUser, userRole, loading: authLoading } = useAuth();
 
   const loadContacts = useCallback(async () => {
     if (!currentUser) {
@@ -57,12 +57,10 @@ export default function ChatPage() {
           lastMessage: "Click to start a conversation...", 
           unread: Math.floor(Math.random() * 3), 
           online: Math.random() > 0.5, 
-          hint: 'person ' + user.name.split(' ')[0].toLowerCase(),
+          hint: 'person ' + (user.name.split(' ')[0] || 'contact').toLowerCase(),
         }));
         setContacts(fetchedContacts);
         if (fetchedContacts.length > 0) {
-          // Smart default selection:
-          // If patient, select first nurse. If nurse/admin, select first contact who is not self.
           let defaultContact = fetchedContacts[0];
           if (userRole === 'patient') {
             defaultContact = fetchedContacts.find(c => c.role === 'nurse' && c.id !== currentUser.uid) || fetchedContacts.find(c => c.id !== currentUser.uid) || fetchedContacts[0];
@@ -79,30 +77,47 @@ export default function ChatPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, userRole]); // Added userRole
+  }, [currentUser, userRole]);
 
-  // Filter contacts based on search term and user role
   useEffect(() => {
-    if (currentUser && userRole) { // Ensure currentUser and userRole are available
-      const lowerCaseSearchTerm = searchTerm.toLowerCase();
-      const filtered = contacts.filter(contact => {
-        if (contact.id === currentUser.uid) return false; // Exclude self from search results
+    if (currentUser && userRole) {
+      const lowerCaseTrimmedSearchTerm = searchTerm.trim().toLowerCase();
+      
+      if (!lowerCaseTrimmedSearchTerm) {
+        // If search term is empty, show all contacts permissible by role, excluding self
+        // This logic is slightly simplified; the main list rendering already filters self.
+        // For consistency, if search is cleared, filteredContacts could mirror main list or be empty.
+        // Setting to empty often makes sense for a "search results" area if search is cleared.
+        // Or, show the default list (all visible contacts for the role)
+         const allVisibleContacts = contacts.filter(contact => {
+            if (contact.id === currentUser.uid) return false;
+            if (userRole === 'admin' || userRole === 'nurse') return true;
+            if (userRole === 'patient') return contact.role === 'nurse';
+            return false;
+        });
+        setFilteredContacts(allVisibleContacts);
+        return;
+      }
 
-        const matchesSearchTerm = contact.name.toLowerCase().includes(lowerCaseSearchTerm);
+      const filtered = contacts.filter(contact => {
+        if (contact.id === currentUser.uid) return false;
+
+        const contactName = (contact.name || "").trim().toLowerCase();
+        const matchesSearchTerm = contactName.includes(lowerCaseTrimmedSearchTerm);
         if (!matchesSearchTerm) return false;
 
         if (userRole === 'admin' || userRole === 'nurse') {
-          return true; // Admin and Nurse can search for both nurse and patient
+          return true; 
         } else if (userRole === 'patient') {
-          return contact.role === 'nurse'; // Patient can only search for nurses
+          return contact.role === 'nurse'; 
         }
         return false; 
       });
       setFilteredContacts(filtered);
     } else {
-      setFilteredContacts([]); // If no user or role, show no filtered contacts
+      setFilteredContacts([]); 
     }
-  }, [searchTerm, contacts, currentUser, userRole]); // Added userRole and currentUser to dependency array
+  }, [searchTerm, contacts, currentUser, userRole]);
 
   useEffect(() => {
     if(!authLoading){
@@ -136,7 +151,7 @@ export default function ChatPage() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            {searchTerm && (
+            {searchTerm.trim() && ( // Only show dropdown if trimmed searchTerm is not empty
               <div className="absolute z-10 w-full bg-card border border-border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto">
                 {filteredContacts.length > 0 ? (
                   filteredContacts.map(contact => (
@@ -179,7 +194,7 @@ export default function ChatPage() {
             {!isLoading && !error && contacts.length === 0 && (
               <p className="p-4 text-center text-muted-foreground">No contacts available.</p>
             )}
-            {!isLoading && !error && contacts.filter(c => c.id !== currentUser?.uid).map(contact => ( // Filter out current user from main list
+            {!isLoading && !error && contacts.filter(c => c.id !== currentUser?.uid).map(contact => ( 
               <div
                 key={contact.id} 
                 className={`flex items-center gap-3 p-3 border-b hover:bg-accent/50 cursor-pointer ${selectedContact?.id === contact.id ? 'bg-accent' : ''}`}

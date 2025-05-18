@@ -104,6 +104,12 @@ export default function NewAppointmentPage() {
           description: `Appointment for ${selectedPatient?.name || 'Selected Patient'} with ${selectedNurse?.name || 'Selected Nurse'} on ${format(values.appointmentDate, "PPP")} at ${values.appointmentTime} has been scheduled.`,
         });
         form.reset();
+
+        // TODO: Implement sendAppointmentNotifications function.
+        // This is where backend calls for email and push notifications should be made.
+        // In-app notifications would typically be handled by a real-time listener
+        // in the notification component itself, triggered by a database change.
+        // sendAppointmentNotifications(values);
       } else {
          toast({
           variant: "destructive",

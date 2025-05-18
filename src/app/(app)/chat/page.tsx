@@ -80,9 +80,19 @@ export default function ChatPage() {
   }, [currentUser, userRole]);
 
   useEffect(() => {
+    if (!authLoading) {
+      loadContacts();
+    }
+  }, [authLoading, loadContacts]);
+
+  useEffect(() => {
+    console.log("[ChatPage] Contacts list for filtering:", contacts); 
     if (currentUser && userRole) {
+      console.log("[ChatPage] Search: currentUser.uid:", currentUser.uid, "userRole:", userRole, "searchTerm:", searchTerm);
       const lowerCaseTrimmedSearchTerm = searchTerm.trim().toLowerCase();
-      
+      console.log("[ChatPage] Search: lowerCaseTrimmedSearchTerm:", lowerCaseTrimmedSearchTerm);
+
+
       if (!lowerCaseTrimmedSearchTerm) {
          const allVisibleContacts = contacts.filter(contact => {
             if (contact.id === currentUser.uid) return false;
@@ -90,6 +100,7 @@ export default function ChatPage() {
             if (userRole === 'patient') return contact.role === 'nurse';
             return false;
         });
+        console.log("[ChatPage] Search: No search term, allVisibleContacts:", allVisibleContacts);
         setFilteredContacts(allVisibleContacts);
         return;
       }
@@ -99,27 +110,30 @@ export default function ChatPage() {
 
         const contactName = (contact.name || "").trim().toLowerCase();
         const matchesSearchTerm = contactName.includes(lowerCaseTrimmedSearchTerm);
+        
+        // console.log(`[ChatPage] Search: Checking contact: ${contact.name} (Role: ${contact.role}). Name matches '${lowerCaseTrimmedSearchTerm}'? ${matchesSearchTerm}`);
+
         if (!matchesSearchTerm) return false;
 
         if (userRole === 'admin' || userRole === 'nurse') {
+          // console.log(`[ChatPage] Search: Admin/Nurse - Matched and visible: ${contact.name}`);
           return true; 
         } else if (userRole === 'patient') {
-          return contact.role === 'nurse'; 
+          const isNurse = contact.role === 'nurse';
+          // console.log(`[ChatPage] Search: Patient - Matched ${contact.name}. Is Nurse? ${isNurse}`);
+          return isNurse; 
         }
         return false; 
       });
+      console.log("[ChatPage] Search: Filtered results:", filtered);
       setFilteredContacts(filtered);
     } else {
+      console.log("[ChatPage] Search: No currentUser or userRole, clearing filteredContacts.");
       setFilteredContacts([]); 
     }
   }, [searchTerm, contacts, currentUser, userRole]);
 
-  useEffect(() => {
-    if(!authLoading){
-      loadContacts();
-    }
-  }, [authLoading, loadContacts]);
-
+  
   if (authLoading) {
     return (
      <div className="flex items-center justify-center h-[calc(100vh-100px)]">

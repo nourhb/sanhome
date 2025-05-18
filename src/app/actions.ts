@@ -18,7 +18,7 @@ import {
 } from '@/ai/flows/personalized-care-suggestions';
 import { z } from 'zod';
 import { generateRandomPassword, generateRandomString, generatePhoneNumber, generateDateOfBirth } from '@/lib/utils';
-import { auth as firebaseAuthInstance, db as firestoreInstance, storage as firebaseStorageInstance } from '@/lib/firebase';
+import { auth as firebaseAuthInstanceOriginal, db as firestoreInstanceOriginal, storage as firebaseStorageInstanceOriginal } from '@/lib/firebase';
 import {
   collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp,
   query, where, updateDoc, deleteDoc, writeBatch, getCountFromServer, orderBy, limit, setDoc, collectionGroup
@@ -28,6 +28,10 @@ import nodemailer from 'nodemailer';
 import { format } from 'date-fns';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
+
+const firestoreInstance = firestoreInstanceOriginal;
+const firebaseAuthInstance = firebaseAuthInstanceOriginal;
+const firebaseStorageInstance = firebaseStorageInstanceOriginal;
 
 console.log('[ACTION_LOG] Top of actions.ts: Firebase firestoreInstance object initialized in lib/firebase.ts?', !!firestoreInstance);
 console.log('[ACTION_LOG] Top of actions.ts: Firebase firebaseAuthInstance object initialized in lib/firebase.ts?', !!firebaseAuthInstance);
@@ -716,13 +720,17 @@ export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListIte
 }
 
 // --- Database Seeding ---
-// REMINDER FOR SEEDING:
-// Ensure your Firestore rules allow writes for this operation, especially if running from an authenticated client context.
-// Temporarily opening rules (e.g., `allow read, write: if true;`) might be necessary for initial seeding if `request.auth != null` causes issues with server action context.
-// Make sure to revert to secure rules immediately after seeding.
-// ALSO: Firebase Auth user creation via client SDK (createUserWithEmailAndPassword) from a server action can be tricky with auth context.
-// This script tries its best but if "auth/internal-error" or "permission-denied" occurs during user creation,
-// it's a sign of this context issue. Admin SDK is more reliable for backend user creation but can't be used directly in server actions.
+// REMINDER FOR SEEDING FROM CLIENT-SIDE SERVER ACTION:
+// If your Firestore rules are `allow read, write: if request.auth != null;`,
+// you MUST be logged into the application when triggering this seed action.
+// For the very first seeding or if auth context issues persist,
+// you might need to TEMPORARILY open your Firestore rules
+// (e.g., `allow read, write: if true;`), run the seed, then IMMEDIATELY revert to secure rules.
+// This is especially true if `createUserWithEmailAndPassword` (client SDK) is used within the server action.
+//
+// Also ensure Firebase Auth "Email/Password" sign-in provider is ENABLED in your Firebase project.
+// And ensure the Cloud Firestore API is ENABLED in your Google Cloud project.
+//
 console.log("[ACTION_LOG] Defining seedDatabase function.");
 
 const firstNames = [
@@ -796,14 +804,7 @@ const mockTunisianNurses = [
     phone: generatePhoneNumber(), email: "mohamed.gharbi-" + generateRandomString(4) + "@sanhome.com", status: "Unavailable", hint: "male nurse tunisian"
   },
 ];
-/**
- * IMPORTANT FOR SEEDING FROM CLIENT-SIDE SERVER ACTION:
- * If your Firestore rules are `allow read, write: if request.auth != null;`,
- * you MUST be logged into the application when triggering this seed action.
- * For the very first seeding or if auth context issues persist,
- * you might need to TEMPORARILY open your Firestore rules
- * (e.g., `allow read, write: if true;`), run the seed, then IMMEDIATELY revert to secure rules.
- */
+
 export async function seedDatabase(): Promise<{ success: boolean; message: string; details?: Record<string, string> }> {
   console.log("[ACTION_LOG] seedDatabase: Action invoked.");
   console.log(`[ACTION_LOG] seedDatabase: Firebase firestoreInstance object initialized? ${!!firestoreInstance}`);
@@ -834,12 +835,13 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
       const usersCollRef = collection(firestoreInstance, "users");
       const usersCountSnapshot = await getCountFromServer(usersCollRef);
       usersCount = usersCountSnapshot.data().count;
-      console.log(`[ACTION_LOG] seedDatabase: Found ${usersCount} existing user documents in Firestore. Count: ${usersCount}.`);
+      console.log(`[ACTION_LOG] seedDatabase: Found ${usersCount} existing user documents in Firestore. Count from getCountFromServer: ${usersCount}.`);
       results.users = `Checked 'users' collection, found ${usersCount} documents. `;
     } catch (e: any) {
       const specificError = `Failed to get count for 'users' collection: ${e.message} (Code: ${e.code || 'N/A'}). Ensure Firestore API is enabled and rules allow reads (potentially temporarily open rules for seeding: allow read, write: if true;).`;
       console.error(`[ACTION_ERROR] seedDatabase: ${specificError}`, e);
-      return { success: false, message: `Database seeding failed: ${specificError}`, details: results };
+      // Return specific error for toast
+      return { success: false, message: `Database seeding failed: Could not check 'users' collection. Ensure Firestore API is enabled and rules allow reads. Details: ${e.message} (Code: ${e.code || 'N/A'})`, details: results };
     }
 
     if (usersCount === 0) {
@@ -972,7 +974,8 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
       }
       results.patients += `Seeded ${seededPatientsCount} patients.`;
     } else {
-      console.log(`[ACTION_LOG] seedDatabase: 'patients' collection not empty (found ${patientsCount} docs), skipping patient seeding.`);
+      console.log(`[ACTION_LOG] seedDatabase: 'patients' collection not empty (found ${patientsCount} docs). Actual count: ${patientsCount}. Skipping patient seeding.`);
+      results.patients += `Patients collection is not empty (found ${patientsCount} docs). Skipping seeding patients.`;
        const existingPatientsSnapshot = await getDocs(collection(firestoreInstance, "patients"));
         existingPatientsSnapshot.forEach(docSnap => {
             const data = docSnap.data();
@@ -1183,7 +1186,6 @@ export async function fetchPatients(): Promise<{ data?: PatientListItem[], error
       throw new Error("Firestore `firestoreInstance` instance is not available in fetchPatients.");
     }
     const patientsCollectionRef = collection(firestoreInstance, "patients");
-    // const q = query(patientsCollectionRef); // Simplified query for debugging permissions
     const q = query(patientsCollectionRef, orderBy("createdAt", "desc"));
     console.log("[ACTION_LOG] fetchPatients: Created collection reference. Attempting getDocs...");
 
@@ -1500,7 +1502,7 @@ export async function fetchCareLogs(patientId?: string): Promise<{ data?: CareLo
     console.error("[ACTION_ERROR] fetchCareLogs:", error);
     if (error.code === 'failed-precondition' && error.message.includes('indexes?create_composite=')) {
         console.warn("[ACTION_WARN] fetchCareLogs: Query requires a composite index.");
-        return { data: [], error: "Query requires an index. Please create it in Firestore for 'careLogs' (patientId == X, careDate desc) or (careDate desc)." };
+        return { data: [], error: "Query requires an index. Please create it in Firestore for 'careLogs'." };
     }
     return { data: [], error: `Failed to fetch care logs: ${error.message}` };
   }
@@ -1561,15 +1563,11 @@ export async function updateCareLog(logId: string, values: UpdateCareLogFormValu
 
     let patientName = "N/A";
     // Fetch patient name if patientId is part of the update
-    // This assumes patientId might change, though usually it wouldn't for a log update.
-    // If patientId cannot change for a log, this patient fetch can be omitted.
     const patientDoc = await getDoc(doc(firestoreInstance, "patients", validatedValues.patientId));
     if (patientDoc.exists()) {
         patientName = patientDoc.data().name;
     } else {
-        // This case might be an error if patientId is supposed to be fixed for a log.
-        // For now, just log a warning.
-        console.warn(`[ACTION_WARN] updateCareLog: Patient with ID ${validatedValues.patientId} not found during update. Patient name will be 'N/A' if it was meant to change or was not previously set.`);
+        console.warn(`[ACTION_WARN] updateCareLog: Patient with ID ${validatedValues.patientId} not found during update.`);
     }
 
 
@@ -1577,11 +1575,10 @@ export async function updateCareLog(logId: string, values: UpdateCareLogFormValu
     // Prepare data for Firestore update
     const updatedCareLogData = {
       patientId: validatedValues.patientId,
-      patientName, // This will update the patientName if it changed or was 'N/A'
+      patientName, 
       careType: validatedValues.careType,
-      careDate: Timestamp.fromDate(validatedValues.careDateTime), // Ensure this uses the validated DateTime
-      notes: validatedValues.notes, // Notes being updated
-      // loggedBy and createdAt are typically not updated during an edit
+      careDate: Timestamp.fromDate(validatedValues.careDateTime), 
+      notes: validatedValues.notes, 
     };
 
     await updateDoc(careLogRef, updatedCareLogData);
@@ -1836,7 +1833,7 @@ export async function fetchUsersForAdmin(): Promise<{ data?: UserForAdminList[];
                 id: docSnap.id, // This is the UID
                 email: data.email || null,
                 name: `${data.firstName || ''} ${data.lastName || ''}`.trim() || "N/A",
-                role: data.role || 'User',
+                role: data.role || 'patient', // Default to 'patient' for consistency with AuthContext
                 status: 'Active', // Default status, could be enhanced
                 joined: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
                 createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
@@ -1852,3 +1849,4 @@ export async function fetchUsersForAdmin(): Promise<{ data?: UserForAdminList[];
         return { data: [], error: `Failed to fetch users: ${error.message}` };
     }
 }
+

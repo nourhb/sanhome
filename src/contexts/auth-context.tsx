@@ -76,11 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // This 'role' field is set during signup or can be manually edited in Firestore.
           setCurrentUser({ ...user, appRole: userData.role || 'patient' } as AppUser); // Default appRole
           setUserRole(userData.role || 'patient'); // Default userRole to 'patient' if not found
+          console.log(`[AuthContext] User ${user.uid} authenticated. Role from Firestore: ${userData.role || 'patient (defaulted)'}`);
         } else {
           // No custom profile yet, or role not set
           setCurrentUser(user as AppUser);
           setUserRole('patient'); // Assign a default role if no Firestore profile exists
-          console.warn(`No Firestore profile found for user ${user.uid} in 'users' collection. Defaulting role to 'patient'.`);
+          console.warn(`[AuthContext] No Firestore profile found for user ${user.uid} in 'users' collection. Defaulting role to 'patient'.`);
         }
       } else {
         // User is signed out
@@ -121,6 +122,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         setCurrentUser({ ...fbUser, appRole: values.role } as AppUser);
         setUserRole(values.role);
+
+        // If the user signed up as a patient, create a corresponding record in the "patients" collection
+        if (values.role === 'patient') {
+          const patientDocRef = doc(db, "patients", fbUser.uid); // Use UID as patient doc ID for easy linking
+          
+          // Calculate age
+          const today = new Date();
+          const birthDate = values.dateOfBirth;
+          let age = today.getFullYear() - birthDate.getFullYear();
+          const m = today.getMonth() - birthDate.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+              age--;
+          }
+
+          const patientData = {
+            name: `${values.firstName} ${values.lastName}`,
+            age: age,
+            avatarUrl: `https://placehold.co/100x100.png?text=${values.firstName[0] || 'P'}${values.lastName[0] || ''}`,
+            hint: "person face",
+            joinDate: Timestamp.now(), // Or Timestamp.fromDate(new Date())
+            primaryNurse: "Not Assigned",
+            phone: values.phoneNumber,
+            email: values.email,
+            address: values.address,
+            mobilityStatus: "Unknown",
+            pathologies: [],
+            allergies: [],
+            lastVisit: Timestamp.now(), // Or Timestamp.fromDate(new Date())
+            condition: "General Checkup", 
+            status: "Active", 
+            createdAt: serverTimestamp(),
+            // Ensure all fields expected by PatientListItem are present, even if with default values
+            // For fields not collected at signup (e.g. currentMedications, recentVitals), they can be omitted
+            // or added later through a profile editing feature.
+          };
+          await setDoc(patientDocRef, patientData);
+          console.log(`[AuthContext] Created patient record for ${fbUser.uid} in 'patients' collection.`);
+        }
 
         await sendEmailVerification(fbUser);
       }

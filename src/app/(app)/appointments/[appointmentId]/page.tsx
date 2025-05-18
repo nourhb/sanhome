@@ -20,21 +20,16 @@ export default function AppointmentDetailsPage() {
       setIsLoading(true);
       setError(null);
       try {
-        // TODO: Fetch appointment details using appointmentId
-        // Example placeholder for fetching data:
-        // const response = await fetch(`/api/appointments/${appointmentId}`);
-        // if (!response.ok) {
-        //   throw new Error('Failed to fetch appointment details');
-        // }
-        // const data = await response.json();
-        // setAppointment(data);
+        const response = await fetch(`/api/appointments/${appointmentId}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch appointment details');
+        }
+        const data = await response.json();
+        setAppointment(data);
 
-        // Placeholder data for now
-        setAppointment({
-            id: appointmentId,
-            patientName: "Loading...",
-            nurseName: "Loading...",
-            date: "Loading...",
+        // // Placeholder data for now - REMOVE AFTER IMPLEMENTING FETCH
+        // setAppointment({
+        //     id: appointmentId,
             time: "Loading...",
             type: "Loading...",
         });

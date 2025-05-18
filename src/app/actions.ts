@@ -18,7 +18,7 @@ import {
 } from '@/ai/flows/personalized-care-suggestions';
 import { z } from 'zod';
 import { generateRandomPassword, generateRandomString, generatePhoneNumber, generateDateOfBirth } from '@/lib/utils';
-import { auth as firebaseAuthInstance, db as firestoreInstance, storage as firebaseStorageInstance } from '@/lib/firebase'; // db and storage are re-enabled
+import { auth as firebaseAuthInstance, db as firestoreInstance, storage as firebaseStorageInstance } from '@/lib/firebase';
 import {
   collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp,
   query, where, updateDoc, deleteDoc, writeBatch, getCountFromServer, orderBy, limit, setDoc, collectionGroup
@@ -795,7 +795,14 @@ const mockTunisianNurses = [
     phone: generatePhoneNumber(), email: "mohamed.gharbi-" + generateRandomString(4) + "@sanhome.com", status: "Unavailable", hint: "male nurse tunisian"
   },
 ];
-
+/**
+ * IMPORTANT FOR SEEDING FROM CLIENT-SIDE SERVER ACTION:
+ * If your Firestore rules are `allow read, write: if request.auth != null;`,
+ * you MUST be logged into the application when triggering this seed action.
+ * For the very first seeding or if auth context issues persist,
+ * you might need to TEMPORARILY open your Firestore rules
+ * (e.g., `allow read, write: if true;`), run the seed, then IMMEDIATELY revert to secure rules.
+ */
 export async function seedDatabase(): Promise<{ success: boolean; message: string; details?: Record<string, string> }> {
   console.log("[ACTION_LOG] seedDatabase: Action invoked.");
   console.log(`[ACTION_LOG] seedDatabase: Firebase firestoreInstance object initialized? ${!!firestoreInstance}`);
@@ -1511,12 +1518,13 @@ export async function addCareLog(values: AddCareLogFormValues, loggedByName: str
     const patientDoc = await getDoc(doc(firestoreInstance, "patients", validatedValues.patientId));
     if (patientDoc.exists()) patientName = patientDoc.data().name;
 
+    // Reordered for emphasis and added comment
     const newCareLogData = {
       patientId: validatedValues.patientId,
       patientName,
-      careDate: Timestamp.fromDate(validatedValues.careDateTime), // Store as Timestamp
       careType: validatedValues.careType,
-      notes: validatedValues.notes,
+      careDate: Timestamp.fromDate(validatedValues.careDateTime),
+      notes: validatedValues.notes, // Ensuring notes are explicitly part of the saved data
       loggedBy: loggedByName,
       createdAt: serverTimestamp(),
     };
@@ -1562,12 +1570,13 @@ export async function updateCareLog(logId: string, values: UpdateCareLogFormValu
     }
 
     const careLogRef = doc(firestoreInstance, "careLogs", logId);
+    // Reordered for emphasis and added comment
     const updatedCareLogData = {
       patientId: validatedValues.patientId,
-      patientName, // Update if patientId changed
-      careDate: Timestamp.fromDate(validatedValues.careDateTime),
+      patientName,
       careType: validatedValues.careType,
-      notes: validatedValues.notes,
+      careDate: Timestamp.fromDate(validatedValues.careDateTime),
+      notes: validatedValues.notes, // Ensuring notes are explicitly part of the updated data
       // loggedBy and createdAt are typically not updated
     };
 

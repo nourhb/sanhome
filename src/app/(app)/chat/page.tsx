@@ -84,11 +84,6 @@ export default function ChatPage() {
       const lowerCaseTrimmedSearchTerm = searchTerm.trim().toLowerCase();
       
       if (!lowerCaseTrimmedSearchTerm) {
-        // If search term is empty, show all contacts permissible by role, excluding self
-        // This logic is slightly simplified; the main list rendering already filters self.
-        // For consistency, if search is cleared, filteredContacts could mirror main list or be empty.
-        // Setting to empty often makes sense for a "search results" area if search is cleared.
-        // Or, show the default list (all visible contacts for the role)
          const allVisibleContacts = contacts.filter(contact => {
             if (contact.id === currentUser.uid) return false;
             if (userRole === 'admin' || userRole === 'nurse') return true;
@@ -100,7 +95,7 @@ export default function ChatPage() {
       }
 
       const filtered = contacts.filter(contact => {
-        if (contact.id === currentUser.uid) return false;
+        if (contact.id === currentUser.uid) return false; 
 
         const contactName = (contact.name || "").trim().toLowerCase();
         const matchesSearchTerm = contactName.includes(lowerCaseTrimmedSearchTerm);
@@ -151,7 +146,7 @@ export default function ChatPage() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            {searchTerm.trim() && ( // Only show dropdown if trimmed searchTerm is not empty
+            {searchTerm.trim() && ( 
               <div className="absolute z-10 w-full bg-card border border-border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto">
                 {filteredContacts.length > 0 ? (
                   filteredContacts.map(contact => (
@@ -171,7 +166,9 @@ export default function ChatPage() {
                     </div>
                   ))
                 ) : (
-                  <p className="p-2 text-center text-muted-foreground text-sm">No matching contacts found.</p>
+                  <p className="p-3 text-center text-muted-foreground text-sm">
+                    No contacts match your search criteria.
+                  </p>
                 )}
               </div>
             )}
@@ -194,7 +191,7 @@ export default function ChatPage() {
             {!isLoading && !error && contacts.length === 0 && (
               <p className="p-4 text-center text-muted-foreground">No contacts available.</p>
             )}
-            {!isLoading && !error && contacts.filter(c => c.id !== currentUser?.uid).map(contact => ( 
+            {!isLoading && !error && contacts.filter(c => currentUser && c.id !== currentUser.uid && (userRole === 'admin' || userRole === 'nurse' || (userRole === 'patient' && c.role === 'nurse'))).map(contact => ( 
               <div
                 key={contact.id} 
                 className={`flex items-center gap-3 p-3 border-b hover:bg-accent/50 cursor-pointer ${selectedContact?.id === contact.id ? 'bg-accent' : ''}`}
@@ -278,3 +275,5 @@ export default function ChatPage() {
     </div>
   );
 }
+
+    

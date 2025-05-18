@@ -55,6 +55,7 @@ export default function ChatPage() {
       if (result.data) {
         const fetchedContacts: Contact[] = result.data.map(user => ({
           ...user,
+          avatarUrl: user.avatarUrl || `https://placehold.co/40x40.png`, // Ensure avatarUrl is part of UserForAdminList or handled
           avatarPath: user.avatarUrl || `https://placehold.co/40x40.png`,
           lastMessage: "Click to start a conversation...",
           unread: Math.floor(Math.random() * 3),
@@ -62,23 +63,34 @@ export default function ChatPage() {
           hint: user.hint || 'person ' + (user.name?.split(' ')[0] || 'contact').toLowerCase(),
         }));
         setContacts(fetchedContacts);
-        console.log("[ChatPage] Initial contacts loaded:", fetchedContacts);
+        console.log("[ChatPage] Initial contacts loaded (from fetchUsersForAdmin):", fetchedContacts);
 
         if (fetchedContacts.length > 0) {
           let defaultContact: Contact | undefined;
           if (userRole === 'patient') {
             defaultContact = fetchedContacts.find(c => c.role === 'nurse' && (!currentUser || c.id !== currentUser.uid));
-          } else {
-            defaultContact = fetchedContacts.find(c => (!currentUser || c.id !== currentUser.uid));
+          } else { // admin or nurse
+            defaultContact = fetchedContacts.find(c => c.role === 'patient' && (!currentUser || c.id !== currentUser.uid));
+            if (!defaultContact) { // if no patients, try a nurse
+                defaultContact = fetchedContacts.find(c => c.role === 'nurse' && (!currentUser || c.id !== currentUser.uid));
+            }
           }
-          setSelectedContact(defaultContact || (fetchedContacts[0]?.id !== currentUser?.uid ? fetchedContacts[0] : fetchedContacts[1] || null) );
+           // Fallback if no specific default found
+          if (!defaultContact && fetchedContacts.length > 0) {
+             defaultContact = fetchedContacts[0]?.id !== currentUser?.uid ? fetchedContacts[0] : (fetchedContacts[1] || null);
+          }
+          setSelectedContact(defaultContact || null);
+          if (defaultContact?.role === 'patient') setSelectedPatientIdFromDropdown(defaultContact.id);
+          if (defaultContact?.role === 'nurse') setSelectedNurseIdFromDropdown(defaultContact.id);
         }
 
       } else {
         setError(result.error || "Failed to load contacts.");
+        console.error("[ChatPage] Error loading contacts:", result.error);
       }
     } catch (e: any) {
       setError(`Failed to load contacts: ${e.message}`);
+      console.error("[ChatPage] Exception loading contacts:", e);
     } finally {
       setIsLoading(false);
     }
@@ -91,20 +103,23 @@ export default function ChatPage() {
   }, [authLoading, loadContacts]);
 
   const patientContacts = useMemo(() => {
+    console.log("[ChatPage useMemo patientContacts] Full 'contacts' list before filtering for patients:", contacts);
+    console.log("[ChatPage useMemo patientContacts] CurrentUser UID for exclusion:", currentUser?.uid);
     const filtered = contacts.filter(contact => contact.role === 'patient' && contact.id !== currentUser?.uid);
-    console.log("[ChatPage] Memoized patientContacts:", filtered);
+    console.log("[ChatPage useMemo patientContacts] Derived patientContacts:", filtered);
     return filtered;
   }, [contacts, currentUser]);
 
   const nurseContacts = useMemo(() => {
+    console.log("[ChatPage useMemo nurseContacts] Full 'contacts' list before filtering for nurses:", contacts);
+    console.log("[ChatPage useMemo nurseContacts] CurrentUser UID for exclusion:", currentUser?.uid);
     const filtered = contacts.filter(contact => contact.role === 'nurse' && contact.id !== currentUser?.uid);
-    console.log("[ChatPage] Memoized nurseContacts:", filtered);
+    console.log("[ChatPage useMemo nurseContacts] Derived nurseContacts:", filtered);
     return filtered;
   }, [contacts, currentUser]);
 
   useEffect(() => {
-    // Log the userRole for debugging dropdown visibility
-    console.log("[ChatPage] Current userRole:", userRole);
+    console.log("[ChatPage] Current userRole from useAuth():", userRole);
   }, [userRole]);
 
   const handleSelectPatient = (patientId: string) => {
@@ -112,7 +127,7 @@ export default function ChatPage() {
     if (contact) {
       setSelectedContact(contact);
       setSelectedPatientIdFromDropdown(patientId);
-      setSelectedNurseIdFromDropdown("");
+      setSelectedNurseIdFromDropdown(""); // Clear other dropdown
     }
   };
 
@@ -121,7 +136,7 @@ export default function ChatPage() {
     if (contact) {
       setSelectedContact(contact);
       setSelectedNurseIdFromDropdown(nurseId);
-      setSelectedPatientIdFromDropdown("");
+      setSelectedPatientIdFromDropdown(""); // Clear other dropdown
     }
   };
 
@@ -212,7 +227,7 @@ export default function ChatPage() {
                 onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setSelectedContact(contact)}
               >
                 <Avatar className="h-10 w-10 relative">
-                  <AvatarImage src={contact.avatarPath} alt={contact.name} data-ai-hint={contact.hint} />
+                  <AvatarImage src={contact.avatarUrl} alt={contact.name} data-ai-hint={contact.hint} />
                   <AvatarFallback>{contact.name?.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                   {contact.online && <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />}
                 </Avatar>
@@ -238,7 +253,7 @@ export default function ChatPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Avatar className="h-10 w-10 relative">
-                  <AvatarImage src={selectedContact.avatarPath} alt={selectedContact.name} data-ai-hint={selectedContact.hint} />
+                  <AvatarImage src={selectedContact.avatarUrl} alt={selectedContact.name} data-ai-hint={selectedContact.hint} />
                   <AvatarFallback>{selectedContact.name?.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                   {selectedContact.online && <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />}
                 </Avatar>
@@ -286,3 +301,5 @@ export default function ChatPage() {
     </div>
   );
 }
+
+    

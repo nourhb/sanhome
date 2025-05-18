@@ -83,9 +83,9 @@ export default function ChatPage() {
 
     try {
       if (userRole === 'patient') {
-        console.log("[ChatPage] Loading contacts for PATIENT:", currentUser.uid);
+        console.log("[ChatPage] Loading contacts for PATIENT. Current User UID:", currentUser.uid);
         const [patientDetailsResult, videoConsultsResult, allNursesResult, allUsersResult] = await Promise.all([
-          fetchPatientById(currentUser.uid), // Patient's own details to find primaryNurse name
+          fetchPatientById(currentUser.uid), 
           fetchVideoConsults(),
           fetchNurses(),
           fetchUsersForAdmin()
@@ -95,13 +95,22 @@ export default function ChatPage() {
         const videoConsults = videoConsultsResult.data || [];
         const allNurses = allNursesResult.data || [];
         const allUsers = allUsersResult.data || [];
+
+        console.log("[ChatPage PATIENT] Fetched patient details:", patient);
+        console.log("[ChatPage PATIENT] Fetched video consults:", videoConsults.filter(c => c.patientId === currentUser.uid));
+        console.log("[ChatPage PATIENT] Fetched ALL nurses (before filtering):", allNurses);
         
         const allowedNurseIds = new Set<string>();
 
         // 1. Add primary nurse
         if (patient && patient.primaryNurse) {
           const primaryNurse = allNurses.find(n => n.name === patient.primaryNurse);
-          if (primaryNurse) allowedNurseIds.add(primaryNurse.id);
+          if (primaryNurse) {
+            allowedNurseIds.add(primaryNurse.id);
+            console.log(`[ChatPage PATIENT] Primary nurse "${primaryNurse.name}" (ID: ${primaryNurse.id}) added to allowedNurseIds.`);
+          } else {
+            console.warn(`[ChatPage PATIENT] Primary nurse named "${patient.primaryNurse}" not found in allNurses list.`);
+          }
         }
 
         // 2. Add nurses from video consults
@@ -110,6 +119,7 @@ export default function ChatPage() {
             allowedNurseIds.add(consult.nurseId);
           }
         });
+        console.log("[ChatPage PATIENT] Allowed nurse IDs (after primary & consults):", Array.from(allowedNurseIds));
         
         const nurseContacts = allNurses
           .filter(n => allowedNurseIds.has(n.id))
@@ -118,17 +128,18 @@ export default function ChatPage() {
             avatarUrl: n.avatar || `https://placehold.co/40x40.png`,
             lastMessage: "Click to chat", hint: n.hint || 'nurse medical'
           }));
+        console.log("[ChatPage PATIENT] Final nurseContacts list for patient:", nurseContacts);
 
         const adminContacts = allUsers
           .filter(u => u.role === 'admin' && u.id !== currentUser.uid)
           .map(u => ({
             id: u.id, name: u.name, email: u.email, role: 'admin' as const,
-            avatarUrl: (u as any).avatarUrl || `https://placehold.co/40x40.png`, // Assuming admin might have avatarUrl
+            avatarUrl: (u as any).avatarUrl || `https://placehold.co/40x40.png`,
             lastMessage: "Click to chat", hint: (u as any).hint || 'admin support'
           }));
         
         combinedContacts = [...nurseContacts, ...adminContacts];
-        console.log("[ChatPage] PATIENT contacts filtered:", combinedContacts);
+        console.log("[ChatPage] PATIENT combined contacts (nurses + admins):", combinedContacts);
 
       } else if (userRole === 'nurse') {
         console.log("[ChatPage] Loading contacts for NURSE:", currentUser.uid, currentUser.displayName);
@@ -170,7 +181,7 @@ export default function ChatPage() {
         
         // 3. Add patients assigned to this nurse
         allPatients.forEach(p => {
-          if (p.primaryNurse === currentUser.displayName) { // Match by name, less robust
+          if (p.primaryNurse === currentUser.displayName) { 
              tempContactsMap.set(p.id, {
               id: p.id, name: p.name, email: p.email, role: 'patient' as const,
               avatarUrl: p.avatarUrl || `https://placehold.co/40x40.png`,
@@ -189,7 +200,7 @@ export default function ChatPage() {
 
         allPatients.forEach(p => {
           if (patientIdsFromAppointments.has(p.id)) {
-             tempContactsMap.set(p.id, { // Will overwrite if already added by primaryNurse, which is fine
+             tempContactsMap.set(p.id, { 
               id: p.id, name: p.name, email: p.email, role: 'patient' as const,
               avatarUrl: p.avatarUrl || `https://placehold.co/40x40.png`,
               lastMessage: "Click to chat", hint: p.hint || 'person face'
@@ -199,7 +210,7 @@ export default function ChatPage() {
         combinedContacts = Array.from(tempContactsMap.values());
         console.log("[ChatPage] NURSE contacts filtered:", combinedContacts);
 
-      } else if (userRole === 'admin') { // Admin sees all patients and nurses (excluding self if admin is also a nurse type)
+      } else if (userRole === 'admin') { 
         console.log("[ChatPage] Loading contacts for ADMIN:", currentUser.uid);
          const [patientsResult, nursesResult, allUsersResult] = await Promise.all([
           fetchPatients(),
@@ -219,7 +230,6 @@ export default function ChatPage() {
           lastMessage: "Click to start conversation", hint: n.hint || 'nurse medical',
         }));
         
-        // Add other admins
         const adminContacts = (allUsersResult.data || [])
           .filter(u => u.role === 'admin' && u.id !== currentUser.uid)
           .map(u => ({
@@ -241,14 +251,11 @@ export default function ChatPage() {
         } else if (userRole === 'nurse') {
           defaultContact = combinedContacts.find(c => c.role === 'patient');
           if (!defaultContact) defaultContact = combinedContacts.find(c => c.role === 'admin');
-          if (!defaultContact) defaultContact = combinedContacts.find(c => c.role === 'nurse'); // other nurse
-        } else { // admin
+          if (!defaultContact) defaultContact = combinedContacts.find(c => c.role === 'nurse'); 
+        } else { 
           defaultContact = combinedContacts.find(c => c.role === 'patient');
           if (!defaultContact) defaultContact = combinedContacts.find(c => c.role === 'nurse');
           if (!defaultContact) defaultContact = combinedContacts.find(c => c.role === 'admin');
-        }
-        if (defaultContact) {
-            // setSelectedContact(defaultContact); // Don't auto-select, let user pick
         }
       }
 
@@ -386,6 +393,9 @@ export default function ChatPage() {
     } else if (contact.role === 'nurse') {
       setSelectedNurseIdFromDropdown(contact.id);
       setSelectedPatientIdFromDropdown("");
+    } else { // Admin or other roles
+        setSelectedPatientIdFromDropdown("");
+        setSelectedNurseIdFromDropdown("");
     }
   };
 
@@ -454,7 +464,7 @@ export default function ChatPage() {
             {!isLoadingContacts && !errorContacts && contacts.length === 0 && (
               <p className="p-4 text-center text-muted-foreground">No contacts available for chat based on your role and connections.</p>
             )}
-            {!isLoadingContacts && !errorContacts && contacts.map(contact => ( // Display all contacts from the filtered list
+            {!isLoadingContacts && !errorContacts && contacts.map(contact => ( 
               <div
                 key={contact.id}
                 className={`flex items-center gap-3 p-3 border-b hover:bg-accent/50 cursor-pointer ${selectedContact?.id === contact.id ? 'bg-accent' : ''}`}
@@ -546,4 +556,6 @@ export default function ChatPage() {
     </div>
   );
 }
+    
+
     

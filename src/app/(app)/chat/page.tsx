@@ -9,7 +9,7 @@ import { Send, MessageSquarePlus, UserSearch, Paperclip, Phone, Video, Loader2, 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import { fetchUsersForAdmin, type UserForAdminList } from "@/app/actions"; // Assuming UserForAdminList can serve as contact type
+import { fetchUsersForAdmin, type UserForAdminList } from "@/app/actions"; 
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 // Mock messages - real chat requires a backend and real-time service
@@ -22,10 +22,10 @@ const mockMessages = [
 ];
 
 interface Contact extends UserForAdminList {
-  avatarPath?: string; // Add if not in UserForAdminList
+  avatarPath?: string;
   lastMessage?: string;
   unread?: number;
-  online?: boolean; // This would ideally come from a presence system
+  online?: boolean; 
   hint?: string;
 }
 
@@ -33,11 +33,11 @@ interface Contact extends UserForAdminList {
 export default function ChatPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [searchTerm, setSearchTerm] = useState(''); // State for the search input value
+  const [searchTerm, setSearchTerm] = useState('');
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { currentUser, loading: authLoading } = useAuth();
+  const { currentUser, userRole, loading: authLoading } = useAuth(); // Added userRole
 
   const loadContacts = useCallback(async () => {
     if (!currentUser) {
@@ -49,19 +49,27 @@ export default function ChatPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await fetchUsersForAdmin(); // Using fetchUsersForAdmin as a source of contacts
+      const result = await fetchUsersForAdmin(); 
       if (result.data) {
         const fetchedContacts: Contact[] = result.data.map(user => ({
           ...user,
-          avatarPath: `https://placehold.co/40x40.png?text=${user.name.split(' ').map(n => n[0]).join('')}`, // Placeholder avatar
-          lastMessage: "Click to start a conversation...", // Placeholder
-          unread: Math.floor(Math.random() * 3), // Mock unread
-          online: Math.random() > 0.5, // Mock online status
+          avatarPath: `https://placehold.co/40x40.png?text=${user.name.split(' ').map(n => n[0]).join('')}`, 
+          lastMessage: "Click to start a conversation...", 
+          unread: Math.floor(Math.random() * 3), 
+          online: Math.random() > 0.5, 
           hint: 'person ' + user.name.split(' ')[0].toLowerCase(),
         }));
         setContacts(fetchedContacts);
         if (fetchedContacts.length > 0) {
-          setSelectedContact(fetchedContacts[0]); // Select the first contact by default
+          // Smart default selection:
+          // If patient, select first nurse. If nurse/admin, select first contact who is not self.
+          let defaultContact = fetchedContacts[0];
+          if (userRole === 'patient') {
+            defaultContact = fetchedContacts.find(c => c.role === 'nurse' && c.id !== currentUser.uid) || fetchedContacts.find(c => c.id !== currentUser.uid) || fetchedContacts[0];
+          } else {
+            defaultContact = fetchedContacts.find(c => c.id !== currentUser.uid) || fetchedContacts[0];
+          }
+          setSelectedContact(defaultContact);
         }
       } else {
         setError(result.error || "Failed to load contacts.");
@@ -71,28 +79,31 @@ export default function ChatPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser]);
+  }, [currentUser, userRole]); // Added userRole
 
   // Filter contacts based on search term and user role
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && userRole) { // Ensure currentUser and userRole are available
       const lowerCaseSearchTerm = searchTerm.toLowerCase();
       const filtered = contacts.filter(contact => {
-        const matchesSearchTerm = contact.name.toLowerCase().includes(lowerCaseSearchTerm);
+        if (contact.id === currentUser.uid) return false; // Exclude self from search results
 
-        if (currentUser.appRole === 'admin' || currentUser.appRole === 'nurse') {
-          // Admin and Nurse can search for both nurse and patient
-          return matchesSearchTerm;
-        } else if (currentUser.appRole === 'patient') {
-          // Patient can only search for nurses
-          return matchesSearchTerm && contact.role === 'nurse';
+        const matchesSearchTerm = contact.name.toLowerCase().includes(lowerCaseSearchTerm);
+        if (!matchesSearchTerm) return false;
+
+        if (userRole === 'admin' || userRole === 'nurse') {
+          return true; // Admin and Nurse can search for both nurse and patient
+        } else if (userRole === 'patient') {
+          return contact.role === 'nurse'; // Patient can only search for nurses
         }
-        return false; // Should not happen with defined roles
+        return false; 
       });
       setFilteredContacts(filtered);
+    } else {
+      setFilteredContacts([]); // If no user or role, show no filtered contacts
     }
-  // Dependency array includes searchTerm, contacts, and currentUser
-  }, [searchTerm, contacts, currentUser]);
+  }, [searchTerm, contacts, currentUser, userRole]); // Added userRole and currentUser to dependency array
+
   useEffect(() => {
     if(!authLoading){
       loadContacts();
@@ -118,19 +129,25 @@ export default function ChatPage() {
             <Button variant="ghost" size="icon" aria-label="New Conversation"><MessageSquarePlus className="h-5 w-5" /></Button>
           </CardTitle>
           <div className="relative">
-            <UserSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /> {/* Search icon */}
+            <UserSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search contacts..."
               className="pl-8"
-              value={searchTerm} // Bind input value to searchTerm state
-              onChange={(e) => setSearchTerm(e.target.value)} // Update searchTerm on input change
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
-            {/* Display filtered contacts list below the search input */}
             {searchTerm && (
               <div className="absolute z-10 w-full bg-card border border-border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto">
                 {filteredContacts.length > 0 ? (
                   filteredContacts.map(contact => (
-                    <div key={contact.id} className="flex items-center gap-3 p-2 border-b hover:bg-accent cursor-pointer" onClick={() => { setSelectedContact(contact); setSearchTerm(''); }}>
+                    <div 
+                      key={contact.id} 
+                      className="flex items-center gap-3 p-2 border-b hover:bg-accent cursor-pointer" 
+                      onClick={() => { setSelectedContact(contact); setSearchTerm(''); }}
+                      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (()=>{setSelectedContact(contact); setSearchTerm('');})()}
+                      role="button"
+                      tabIndex={0}
+                    >
                       <Avatar className="h-8 w-8">
                         <AvatarImage src={contact.avatarPath} alt={contact.name} data-ai-hint={contact.hint} />
                         <AvatarFallback>{contact.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
@@ -162,10 +179,10 @@ export default function ChatPage() {
             {!isLoading && !error && contacts.length === 0 && (
               <p className="p-4 text-center text-muted-foreground">No contacts available.</p>
             )}
-            {!isLoading && !error && contacts.map(contact => (
+            {!isLoading && !error && contacts.filter(c => c.id !== currentUser?.uid).map(contact => ( // Filter out current user from main list
               <div
                 key={contact.id} 
-                className={`flex items-center gap-3 p-3 border-b hover:bg-accent/50 cursor-pointer ${selectedContact?.id === contact.id ? 'bg-accent/70' : ''}`}
+                className={`flex items-center gap-3 p-3 border-b hover:bg-accent/50 cursor-pointer ${selectedContact?.id === contact.id ? 'bg-accent' : ''}`}
                 onClick={() => setSelectedContact(contact)}
                 role="button"
                 tabIndex={0}
@@ -205,7 +222,7 @@ export default function ChatPage() {
                 <div>
                   <CardTitle>{selectedContact.name}</CardTitle>
                   <CardDescription className={selectedContact.online ? "text-green-500" : "text-muted-foreground"}>
-                    {selectedContact.online ? "Online" : "Offline"}
+                    {selectedContact.online ? "Online" : "Offline"} {selectedContact.role && `(${selectedContact.role})`}
                   </CardDescription>
                 </div>
               </div>
@@ -216,7 +233,7 @@ export default function ChatPage() {
             </div>
           </CardHeader>
           <ScrollArea className="flex-grow p-4 space-y-4 bg-muted/30">
-              {mockMessages.map(msg => ( // Still using mock messages
+              {mockMessages.map(msg => ( 
                    <div key={msg.id} className={`flex ${msg.self ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-xs lg:max-w-md p-3 rounded-lg shadow-sm ${msg.self ? 'bg-primary text-primary-foreground' : 'bg-card text-card-foreground'}`}>
                           <p className="text-sm">{msg.text}</p>
@@ -238,6 +255,9 @@ export default function ChatPage() {
             <MessageSquarePlus className="h-16 w-16 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">Select a contact to start chatting.</p>
             {isLoading && <p className="text-sm text-muted-foreground mt-2">Loading contacts...</p>}
+             {!isLoading && !error && contacts.length > 0 && !selectedContact && (
+                <p className="text-sm text-muted-foreground mt-2">Or click on a contact from the list.</p>
+            )}
         </Card>
       )}
     </div>

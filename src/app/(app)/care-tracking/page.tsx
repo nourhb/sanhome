@@ -2,13 +2,12 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ListChecks, Activity, FileClock, PlusCircle, ListFilter, Loader2, AlertCircle, Eye } from "lucide-react";
+import { ListChecks, Activity, FileClock, PlusCircle, ListFilter, Loader2, AlertCircle, Eye, Edit, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Label } from "@/components/ui/label"; // Keep Label import if used, but FormLabel is preferred within FormField
 import { Badge } from "@/components/ui/badge";
 import React, { useState, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
@@ -16,8 +15,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import type { CareLogItem, PatientListItem, AddCareLogFormValues } from "@/app/actions";
-import { fetchCareLogs, fetchPatients, addCareLog } from "@/app/actions";
+import type { CareLogItem, PatientListItem, AddCareLogFormValues, UpdateCareLogFormValues } from "@/app/actions";
+import { fetchCareLogs, fetchPatients, addCareLog, updateCareLog } from "@/app/actions";
 import { format, parseISO } from "date-fns";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -37,13 +36,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 const careLogFormSchema = z.object({
   patientId: z.string().min(1, { message: "Patient selection is required." }),
   careType: z.string().min(1, { message: "Type of care is required." }),
-  careDateTime: z.string().refine((val) => !isNaN(Date.parse(val)), { message: "Valid date and time are required."}), // Validates if string can be parsed to date
+  careDateTime: z.string().refine((val) => !isNaN(Date.parse(val)), { message: "Valid date and time are required."}),
   notes: z.string().min(3, { message: "Notes must be at least 3 characters." }),
 });
 
 type ClientCareLogFormValues = z.infer<typeof careLogFormSchema>;
 
-const careTypes = ["Vitals Check", "Medication Administered", "Wound Care", "General Observation", "Physical Therapy", "Consultation Note"];
+const careTypes = ["Vitals Check", "Medication Administered", "Wound Care", "General Observation", "Physical Therapy", "Consultation Note", "Personal Care", "Emergency Response"];
 
 export default function CareTrackingPage() {
   const [careLogs, setCareLogs] = useState<CareLogItem[]>([]);
@@ -56,15 +55,18 @@ export default function CareTrackingPage() {
 
   const [selectedLogForView, setSelectedLogForView] = useState<CareLogItem | null>(null);
   const [isViewLogDialogOpen, setIsViewLogDialogOpen] = useState(false);
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+
+  const defaultFormValues = {
+    patientId: "",
+    careType: "",
+    careDateTime: new Date().toISOString().substring(0, 16), // Format for datetime-local
+    notes: "",
+  };
 
   const form = useForm<ClientCareLogFormValues>({
     resolver: zodResolver(careLogFormSchema),
-    defaultValues: {
-      patientId: "",
-      careType: "",
-      careDateTime: new Date().toISOString().substring(0, 16),
-      notes: "",
-    },
+    defaultValues: defaultFormValues,
   });
 
   const loadData = useCallback(async () => {
@@ -108,17 +110,25 @@ export default function CareTrackingPage() {
       return;
     }
     setFormIsLoading(true);
-    const actionValues: AddCareLogFormValues = {
+    const actionValues: AddCareLogFormValues = { // Also compatible with UpdateCareLogFormValues
       ...values,
       careDateTime: new Date(values.careDateTime), 
     };
-    const result = await addCareLog(actionValues, currentUser.displayName || currentUser.email || "Unknown User");
+
+    let result;
+    if (editingLogId) {
+      result = await updateCareLog(editingLogId, actionValues);
+    } else {
+      result = await addCareLog(actionValues, currentUser.displayName || currentUser.email || "Unknown User");
+    }
+    
     if (result.success) {
-      toast({ title: "Care Log Added", description: result.message });
-      form.reset({ careDateTime: new Date().toISOString().substring(0, 16), patientId: "", careType: "", notes: "" });
+      toast({ title: editingLogId ? "Care Log Updated" : "Care Log Added", description: result.message });
+      form.reset(defaultFormValues);
+      setEditingLogId(null);
       loadData(); // Refresh logs
     } else {
-      toast({ variant: "destructive", title: "Failed to Add Log", description: result.message });
+      toast({ variant: "destructive", title: editingLogId ? "Failed to Update Log" : "Failed to Add Log", description: result.message });
     }
     setFormIsLoading(false);
   }
@@ -126,6 +136,23 @@ export default function CareTrackingPage() {
   const handleViewLog = (log: CareLogItem) => {
     setSelectedLogForView(log);
     setIsViewLogDialogOpen(true);
+  };
+
+  const handleEditLog = (log: CareLogItem) => {
+    setEditingLogId(log.id);
+    // Format date from ISO string to 'yyyy-MM-ddTHH:mm' for datetime-local input
+    const formattedCareDate = format(parseISO(log.careDate), "yyyy-MM-dd'T'HH:mm");
+    form.reset({
+      patientId: log.patientId,
+      careType: log.careType,
+      careDateTime: formattedCareDate,
+      notes: log.notes,
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingLogId(null);
+    form.reset(defaultFormValues);
   };
 
   if (authLoading) {
@@ -160,7 +187,10 @@ export default function CareTrackingPage() {
         <CardContent>
            <div className="grid md:grid-cols-3 gap-6">
             <div className="md:col-span-1 space-y-4 p-4 border rounded-lg shadow-sm bg-card">
-              <h3 className="text-lg font-semibold flex items-center"><PlusCircle className="mr-2 h-5 w-5 text-primary" /> Log New Care Activity</h3>
+              <h3 className="text-lg font-semibold flex items-center">
+                {editingLogId ? <Edit className="mr-2 h-5 w-5 text-primary" /> : <PlusCircle className="mr-2 h-5 w-5 text-primary" />}
+                {editingLogId ? "Edit Care Activity" : "Log New Care Activity"}
+              </h3>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
                   <FormField
@@ -169,7 +199,7 @@ export default function CareTrackingPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel htmlFor="patient">Patient</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value} disabled={patients.length === 0 || isLoading}>
+                        <Select onValueChange={field.onChange} value={field.value} disabled={patients.length === 0 || isLoading || !!editingLogId}>
                           <FormControl>
                             <SelectTrigger id="patient">
                               <SelectValue placeholder={patients.length === 0 ? "No patients available" : "Select Patient"} />
@@ -223,10 +253,17 @@ export default function CareTrackingPage() {
                       </FormItem>
                     )}
                   />
-                  <Button type="submit" className="w-full" disabled={formIsLoading || isLoading}>
-                    {formIsLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Add Care Log
-                  </Button>
+                  <div className="flex gap-2">
+                    {editingLogId && (
+                        <Button type="button" variant="outline" onClick={handleCancelEdit} className="w-1/2">
+                            <XCircle className="mr-2 h-4 w-4" /> Cancel Edit
+                        </Button>
+                    )}
+                    <Button type="submit" className="w-full" disabled={formIsLoading || isLoading}>
+                        {formIsLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        {editingLogId ? "Update Care Log" : "Add Care Log"}
+                    </Button>
+                  </div>
                 </form>
               </Form> 
             </div>
@@ -256,7 +293,7 @@ export default function CareTrackingPage() {
                         <TableHead>Date</TableHead>
                         <TableHead>Type</TableHead>
                         <TableHead className="hidden sm:table-cell">Logged By</TableHead>
-                        <TableHead className="text-right">Details</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -266,9 +303,12 @@ export default function CareTrackingPage() {
                           <TableCell>{format(parseISO(log.careDate), "PPpp")}</TableCell>
                           <TableCell><Badge variant="secondary">{log.careType}</Badge></TableCell>
                           <TableCell className="hidden sm:table-cell">{log.loggedBy}</TableCell>
-                          <TableCell className="text-right">
-                              <Button variant="ghost" size="sm" onClick={() => handleViewLog(log)}>
-                                <Eye className="mr-1 h-4 w-4" /> View
+                          <TableCell className="text-right space-x-1">
+                              <Button variant="ghost" size="sm" onClick={() => handleViewLog(log)} title="View Details">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => handleEditLog(log)} title="Edit Log">
+                                <Edit className="h-4 w-4" />
                               </Button>
                           </TableCell>
                         </TableRow>
@@ -312,5 +352,3 @@ export default function CareTrackingPage() {
     </div>
   );
 }
-
-    

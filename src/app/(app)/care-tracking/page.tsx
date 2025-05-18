@@ -2,13 +2,13 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ListChecks, Activity, FileClock, PlusCircle, ListFilter, Loader2, AlertCircle } from "lucide-react";
+import { ListChecks, Activity, FileClock, PlusCircle, ListFilter, Loader2, AlertCircle, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Label } from "@/components/ui/label";
+import { Label } from "@/components/ui/label"; // Keep Label import if used, but FormLabel is preferred within FormField
 import { Badge } from "@/components/ui/badge";
 import React, { useState, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
@@ -20,7 +20,19 @@ import type { CareLogItem, PatientListItem, AddCareLogFormValues } from "@/app/a
 import { fetchCareLogs, fetchPatients, addCareLog } from "@/app/actions";
 import { format, parseISO } from "date-fns";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"; // Added import
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
 
 const careLogFormSchema = z.object({
   patientId: z.string().min(1, { message: "Patient selection is required." }),
@@ -41,6 +53,9 @@ export default function CareTrackingPage() {
   const [error, setError] = useState<string | null>(null);
   const { currentUser, loading: authLoading } = useAuth();
   const { toast } = useToast();
+
+  const [selectedLogForView, setSelectedLogForView] = useState<CareLogItem | null>(null);
+  const [isViewLogDialogOpen, setIsViewLogDialogOpen] = useState(false);
 
   const form = useForm<ClientCareLogFormValues>({
     resolver: zodResolver(careLogFormSchema),
@@ -64,7 +79,7 @@ export default function CareTrackingPage() {
     setError(null);
     try {
       const [logsResult, patientsResult] = await Promise.all([
-        fetchCareLogs(), // Assumes fetchCareLogs doesn't require userId or is handled internally
+        fetchCareLogs(), 
         fetchPatients()
       ]);
 
@@ -95,7 +110,7 @@ export default function CareTrackingPage() {
     setFormIsLoading(true);
     const actionValues: AddCareLogFormValues = {
       ...values,
-      careDateTime: new Date(values.careDateTime), // Convert string to Date
+      careDateTime: new Date(values.careDateTime), 
     };
     const result = await addCareLog(actionValues, currentUser.displayName || currentUser.email || "Unknown User");
     if (result.success) {
@@ -108,6 +123,11 @@ export default function CareTrackingPage() {
     setFormIsLoading(false);
   }
   
+  const handleViewLog = (log: CareLogItem) => {
+    setSelectedLogForView(log);
+    setIsViewLogDialogOpen(true);
+  };
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -124,7 +144,7 @@ export default function CareTrackingPage() {
         <p className="text-muted-foreground">Record vitals, treatments, and follow-up logs for patients.</p>
       </div>
 
-      {error && !isLoading && ( // Show general error if not loading
+      {error && !isLoading && ( 
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
@@ -141,7 +161,7 @@ export default function CareTrackingPage() {
            <div className="grid md:grid-cols-3 gap-6">
             <div className="md:col-span-1 space-y-4 p-4 border rounded-lg shadow-sm bg-card">
               <h3 className="text-lg font-semibold flex items-center"><PlusCircle className="mr-2 h-5 w-5 text-primary" /> Log New Care Activity</h3>
-              <Form {...form}> {/* Added Form wrapper */}
+              <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
                   <FormField
                     control={form.control}
@@ -208,7 +228,7 @@ export default function CareTrackingPage() {
                     Add Care Log
                   </Button>
                 </form>
-              </Form> {/* Added Form wrapper closing tag */}
+              </Form> 
             </div>
             <div className="md:col-span-2">
               <div className="flex justify-between items-center mb-3">
@@ -247,7 +267,9 @@ export default function CareTrackingPage() {
                           <TableCell><Badge variant="secondary">{log.careType}</Badge></TableCell>
                           <TableCell className="hidden sm:table-cell">{log.loggedBy}</TableCell>
                           <TableCell className="text-right">
-                              <Button variant="ghost" size="sm">View</Button>
+                              <Button variant="ghost" size="sm" onClick={() => handleViewLog(log)}>
+                                <Eye className="mr-1 h-4 w-4" /> View
+                              </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -259,6 +281,34 @@ export default function CareTrackingPage() {
           </div>
         </CardContent>
       </Card>
+
+      {selectedLogForView && (
+        <AlertDialog open={isViewLogDialogOpen} onOpenChange={setIsViewLogDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Care Log Details</AlertDialogTitle>
+              <AlertDialogDescription>
+                Viewing care log for <span className="font-semibold">{selectedLogForView.patientName}</span>.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-3 text-sm py-4 max-h-[60vh] overflow-y-auto pr-2">
+              <p><strong>Patient:</strong> {selectedLogForView.patientName}</p>
+              <p><strong>Date & Time:</strong> {format(parseISO(selectedLogForView.careDate), "PPPp")}</p>
+              <p><strong>Type of Care:</strong> {selectedLogForView.careType}</p>
+              <p><strong>Logged By:</strong> {selectedLogForView.loggedBy}</p>
+              <div>
+                <strong>Notes / Vitals:</strong>
+                <ScrollArea className="h-32 mt-1 rounded-md border p-2 bg-muted/50">
+                  <p className="whitespace-pre-wrap">{selectedLogForView.notes}</p>
+                </ScrollArea>
+              </div>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogAction onClick={() => setIsViewLogDialogOpen(false)}>Close</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }

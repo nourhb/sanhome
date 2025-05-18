@@ -60,6 +60,7 @@ export default function ChatPage() {
           hint: 'person ' + (user.name.split(' ')[0] || 'contact').toLowerCase(),
         }));
         setContacts(fetchedContacts);
+        console.log("[ChatPage] Initial contacts loaded:", fetchedContacts); // Log initial contacts
         if (fetchedContacts.length > 0) {
           let defaultContact = fetchedContacts[0];
           if (userRole === 'patient') {
@@ -86,12 +87,12 @@ export default function ChatPage() {
   }, [authLoading, loadContacts]);
 
   useEffect(() => {
-    console.log("[ChatPage] Contacts list for filtering:", contacts); 
+    console.log("[ChatPage] Search Filter Effect Triggered. SearchTerm:", searchTerm, "UserRole:", userRole);
+    console.log("[ChatPage] Full contacts list for filtering:", contacts); 
+
     if (currentUser && userRole) {
-      console.log("[ChatPage] Search: currentUser.uid:", currentUser.uid, "userRole:", userRole, "searchTerm:", searchTerm);
       const lowerCaseTrimmedSearchTerm = searchTerm.trim().toLowerCase();
       console.log("[ChatPage] Search: lowerCaseTrimmedSearchTerm:", lowerCaseTrimmedSearchTerm);
-
 
       if (!lowerCaseTrimmedSearchTerm) {
          const allVisibleContacts = contacts.filter(contact => {
@@ -109,18 +110,20 @@ export default function ChatPage() {
         if (contact.id === currentUser.uid) return false; 
 
         const contactName = (contact.name || "").trim().toLowerCase();
-        const matchesSearchTerm = contactName.includes(lowerCaseTrimmedSearchTerm);
+        const contactEmail = (contact.email || "").trim().toLowerCase();
         
-        // console.log(`[ChatPage] Search: Checking contact: ${contact.name} (Role: ${contact.role}). Name matches '${lowerCaseTrimmedSearchTerm}'? ${matchesSearchTerm}`);
+        const matchesSearchTerm = contactName.includes(lowerCaseTrimmedSearchTerm) || contactEmail.includes(lowerCaseTrimmedSearchTerm);
+        
+        console.log(`[ChatPage] Search: Checking contact: ${contact.name} (Role: ${contact.role}, Email: ${contact.email}). Name matches '${lowerCaseTrimmedSearchTerm}'? ${contactName.includes(lowerCaseTrimmedSearchTerm)}. Email matches? ${contactEmail.includes(lowerCaseTrimmedSearchTerm)}`);
 
         if (!matchesSearchTerm) return false;
 
         if (userRole === 'admin' || userRole === 'nurse') {
-          // console.log(`[ChatPage] Search: Admin/Nurse - Matched and visible: ${contact.name}`);
+          console.log(`[ChatPage] Search: Admin/Nurse - Matched and visible: ${contact.name}`);
           return true; 
         } else if (userRole === 'patient') {
           const isNurse = contact.role === 'nurse';
-          // console.log(`[ChatPage] Search: Patient - Matched ${contact.name}. Is Nurse? ${isNurse}`);
+          console.log(`[ChatPage] Search: Patient - Matched ${contact.name}. Is Nurse? ${isNurse}`);
           return isNurse; 
         }
         return false; 
@@ -155,7 +158,7 @@ export default function ChatPage() {
           <div className="relative">
             <UserSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search contacts..."
+              placeholder="Search contacts by name or email..."
               className="pl-8"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -289,5 +292,3 @@ export default function ChatPage() {
     </div>
   );
 }
-
-    

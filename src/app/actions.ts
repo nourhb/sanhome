@@ -732,7 +732,7 @@ export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListIte
 // And ensure the Cloud Firestore API is ENABLED in your Google Cloud project.
 //
 console.log("[ACTION_LOG] Defining seedDatabase function.");
-
+// Helper functions for data generation
 const firstNames = [
   "Foulen", "Amina", "Mohamed", "Fatma", "Ali", "Sarah", "Youssef", "Hiba", "Ahmed", "Nour",
   "Khaled", "Lina", "Omar", "Zahra", "Hassan", "Mariem", "Ibrahim", "Sana", "Tarek", "Leila"
@@ -826,6 +826,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     console.log("[ACTION_LOG] seedDatabase: Explicitly checking Firestore `firestoreInstance` and `firebaseAuthInstance` instances before first operation.");
     if (!firestoreInstance) throw new Error("Firestore `firestoreInstance` instance is not available in seedDatabase.");
     if (!firebaseAuthInstance) throw new Error("Firebase `firebaseAuthInstance` instance is not available in seedDatabase.");
+    console.log("[ACTION_LOG] seedDatabase: Firestore and Auth instances confirmed available.");
 
     // --- Seed Users ---
     console.log("[ACTION_LOG] seedDatabase: Checking 'users' collection in Firestore...");
@@ -840,14 +841,13 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     } catch (e: any) {
       const specificError = `Failed to get count for 'users' collection: ${e.message} (Code: ${e.code || 'N/A'}). Ensure Firestore API is enabled and rules allow reads (potentially temporarily open rules for seeding: allow read, write: if true;).`;
       console.error(`[ACTION_ERROR] seedDatabase: ${specificError}`, e);
-      // Return specific error for toast
       return { success: false, message: `Database seeding failed: Could not check 'users' collection. Ensure Firestore API is enabled and rules allow reads. Details: ${e.message} (Code: ${e.code || 'N/A'})`, details: results };
     }
 
     if (usersCount === 0) {
       console.log("[ACTION_LOG] seedDatabase: 'users' collection is empty. Attempting to seed users...");
       const sampleAuthUsers = Array.from({ length: 10 }, (_, index) => ({ // Reduced from 20 to 10 for faster seeding
-        email: `user${index + 1}-${generateRandomString(4)}@sanhome.com`,
+        email: `user${index + 1}-${generateRandomString(4)}@sanhome.com`, // More unique emails
         password: "Password123!",
         firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
         lastName: lastNames[Math.floor(Math.random() * lastNames.length)],
@@ -915,10 +915,14 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
       const existingUsersSnapshot = await getDocs(collection(firestoreInstance, "users"));
         existingUsersSnapshot.forEach(docSnap => {
             const data = docSnap.data();
-            if (data.firstName && data.lastName && data.email) {
-                 userRefs.push({ uid: docSnap.id, name: `${data.firstName} ${data.lastName}`, email: data.email });
+            if ((data.firstName && data.lastName) || data.email) {
+                let name = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+                if (!name && data.email) name = data.email;
+                if (name && data.email) {
+                    userRefs.push({ uid: docSnap.id, name: name, email: data.email });
+                }
             } else {
-                console.warn(`[ACTION_WARN] seedDatabase: User document ${docSnap.id} missing name/email, skipping for refs.`);
+                console.warn(`[ACTION_WARN] seedDatabase: User document ${docSnap.id} missing enough info for ref, skipping.`);
             }
         });
        console.log(`[ACTION_LOG] seedDatabase: Loaded ${userRefs.length} existing user references.`);
@@ -1527,7 +1531,7 @@ export async function addCareLog(values: AddCareLogFormValues, loggedByName: str
       patientName,
       careDate: Timestamp.fromDate(validatedValues.careDateTime), // Ensure this is correctly using the validated DateTime
       careType: validatedValues.careType,
-      notes: validatedValues.notes, // Notes being saved
+      notes: validatedValues.notes, // Notes being saved. This is crucial.
       loggedBy: loggedByName,
       createdAt: serverTimestamp(),
     };
@@ -1575,10 +1579,10 @@ export async function updateCareLog(logId: string, values: UpdateCareLogFormValu
     // Prepare data for Firestore update
     const updatedCareLogData = {
       patientId: validatedValues.patientId,
-      patientName, 
+      patientName,
       careType: validatedValues.careType,
-      careDate: Timestamp.fromDate(validatedValues.careDateTime), 
-      notes: validatedValues.notes, 
+      careDate: Timestamp.fromDate(validatedValues.careDateTime),
+      notes: validatedValues.notes, // Ensure notes are updated.
     };
 
     await updateDoc(careLogRef, updatedCareLogData);
@@ -1827,15 +1831,25 @@ export async function fetchUsersForAdmin(): Promise<{ data?: UserForAdminList[];
         const snapshot = await getDocs(q);
         const usersList = snapshot.docs.map(docSnap => {
             const data = docSnap.data();
-            // Assuming user's 'joined' date is 'createdAt' from Firestore doc
-            // If you want Firebase Auth creation time, you'd need Admin SDK or store it manually
+            // Improved name construction
+            let name = "N/A";
+            if (data.firstName && data.lastName) {
+              name = `${data.firstName} ${data.lastName}`;
+            } else if (data.firstName) {
+              name = data.firstName;
+            } else if (data.lastName) {
+              name = data.lastName;
+            } else if (data.email) {
+              name = data.email; // Fallback to email if no name parts
+            }
+
             return {
                 id: docSnap.id, // This is the UID
                 email: data.email || null,
-                name: `${data.firstName || ''} ${data.lastName || ''}`.trim() || "N/A",
-                role: data.role || 'patient', // Default to 'patient' for consistency with AuthContext
+                name: name,
+                role: data.role || 'patient', // Default to 'patient'
                 status: 'Active', // Default status, could be enhanced
-                joined: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
+                joined: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(), // 'joined' from Firestore profile creation
                 createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
             } as UserForAdminList;
         });
@@ -1849,4 +1863,3 @@ export async function fetchUsersForAdmin(): Promise<{ data?: UserForAdminList[];
         return { data: [], error: `Failed to fetch users: ${error.message}` };
     }
 }
-

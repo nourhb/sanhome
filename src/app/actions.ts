@@ -540,7 +540,8 @@ async function sendConsultScheduledEmail({
   } catch (error: any) {
     console.error(`[EMAIL_ERROR] Error sending consultation scheduled email to ${toEmail}:`, error);
     let specificError = `Failed to send email to ${toEmail}: ${error.message}`;
-    if (error.responseCode === 535 && error.command === 'AUTH PLAIN') {
+    // Updated to handle the specific error structure from Nodemailer when auth fails
+    if (error.code === 'EAUTH' || (error.responseCode === 535 && error.command === 'AUTH PLAIN')) {
         specificError = `Failed to send email to ${toEmail}: Invalid login: 535-5.7.8 Username and Password not accepted. Please check your EMAIL_USER and EMAIL_PASS in .env. For Gmail, consider using an App Password. Google Support: https://support.google.com/mail/?p=BadCredentials`;
     }
     return { success: false, message: specificError };
@@ -620,6 +621,9 @@ export async function scheduleVideoConsult(
     console.log("[ACTION_LOG] scheduleVideoConsult: Video consult added to Firestore with ID:", docRef.id);
 
     // --- Email Notifications ---
+    // IMPORTANT: Ensure EMAIL_USER and EMAIL_PASS in .env are correct for SMTP to work.
+    // For Gmail, use an App Password if 2-Step Verification is enabled.
+    console.log("[ACTION_LOG] scheduleVideoConsult: Attempting to send email notifications...");
     let patientEmailResult = { success: false, message: "Patient email not found or sending skipped." };
     let nurseEmailResult = { success: false, message: "Nurse email not found or sending skipped." };
 
@@ -652,7 +656,7 @@ export async function scheduleVideoConsult(
             nurseEmailResult.message = `Nurse ${nurse.name} has no email.`;
         }
     } else {
-        console.warn("[ACTION_WARN] scheduleVideoConsult: EMAIL_USER or EMAIL_PASS not set in .env. Skipping email notifications.");
+        console.warn("[ACTION_WARN] scheduleVideoConsult: EMAIL_USER or EMAIL_PASS not set in .env. Skipping email notifications. Email content will be simulated in console.");
         // Simulate email sending for logging
         if (patient.email) console.log(`[EMAIL_SIMULATION] Would send email to patient ${patient.email}`); else console.warn(`[EMAIL_SIMULATION] Patient ${patient.name} has no email.`);
         if (nurse.email) console.log(`[EMAIL_SIMULATION] Would send email to nurse ${nurse.email}`); else console.warn(`[EMAIL_SIMULATION] Nurse ${nurse.name} has no email.`);
@@ -662,7 +666,7 @@ export async function scheduleVideoConsult(
 
     let finalMessage = `Video consult scheduled for ${patient.name} with ${nurse.name}.`;
     if (!patientEmailResult.success || !nurseEmailResult.success) {
-      finalMessage += ` Email notifications: Patient: ${patientEmailResult.message} Nurse: ${nurseEmailResult.message}`;
+      finalMessage += ` Email notifications: Patient - ${patientEmailResult.message} Nurse - ${nurseEmailResult.message}`;
     } else {
       finalMessage += ` Emails sent successfully to patient and nurse.`;
     }
@@ -843,7 +847,6 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     console.log("[ACTION_LOG] seedDatabase: Checking 'users' collection in Firestore...");
     let usersCount = 0;
     try {
-      console.log("[ACTION_LOG] seedDatabase: Attempting getCountFromServer for 'users'.");
       const usersCollRef = collection(firestoreInstance, "users");
       const usersCountSnapshot = await getCountFromServer(usersCollRef);
       usersCount = usersCountSnapshot.data().count;
@@ -1550,11 +1553,10 @@ export async function addCareLog(values: AddCareLogFormValues, loggedByName: str
     // Data to be saved in Firestore
     const newCareLogData = {
       patientId: validatedValues.patientId,
-      patientName,
+      patientName, // Name fetched above
       careDate: Timestamp.fromDate(validatedValues.careDateTime), // Ensure this is correctly using the validated DateTime
       careType: validatedValues.careType,
-      // Notes are crucial and should be included.
-      notes: validatedValues.notes, 
+      notes: validatedValues.notes, // Notes from form values
       loggedBy: loggedByName,
       createdAt: serverTimestamp(),
     };
@@ -1602,11 +1604,10 @@ export async function updateCareLog(logId: string, values: UpdateCareLogFormValu
     // Prepare data for Firestore update
     const updatedCareLogData = {
       patientId: validatedValues.patientId,
-      patientName,
+      patientName, // Name fetched above
       careType: validatedValues.careType,
       careDate: Timestamp.fromDate(validatedValues.careDateTime),
-      // Ensure notes are updated.
-      notes: validatedValues.notes, 
+      notes: validatedValues.notes, // Notes from form values
     };
 
     await updateDoc(careLogRef, updatedCareLogData);
@@ -1890,3 +1891,4 @@ export async function fetchUsersForAdmin(): Promise<{ data?: UserForAdminList[];
         return { data: [], error: `Failed to fetch users: ${error.message}` };
     }
 }
+

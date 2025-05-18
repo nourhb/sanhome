@@ -1,59 +1,84 @@
 
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Send, MessageSquarePlus, Paperclip, Phone, Video, Loader2, AlertCircle, Users, Stethoscope } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { fetchPatients, fetchNurses, type PatientListItem, type NurseListItem } from "@/app/actions";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input"; // Re-add Input for message typing
+import { Input } from "@/components/ui/input";
+import { db } from "@/lib/firebase";
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  addDoc,
+  serverTimestamp,
+  doc,
+  setDoc,
+  Timestamp,
+  where,
+  getDocs,
+  writeBatch
+} from "firebase/firestore";
+import { formatDistanceToNow } from "date-fns";
 
-// Mock messages - real chat requires a backend and real-time service
-const mockMessages = [
-    { id: 'm1', senderId: 'user1', text: 'Hi Nurse Joy, I have a quick question about my medication.', time: '10:30 AM', self: false },
-    { id: 'm2', senderId: 'currentUser', text: 'Hello Alice, I\'m here to help. What\'s your question?', time: '10:31 AM', self: true },
-    { id: 'm3', senderId: 'user1', text: 'Is it okay to take it with food?', time: '10:32 AM', self: false },
-    { id: 'm4', senderId: 'currentUser', text: 'Yes, for this particular medication, it\'s best to take it with a meal to avoid stomach upset. Did you have any other concerns?', time: '10:33 AM', self: true },
-    { id: 'm5', senderId: 'user1', text: 'No, that was all. Thank you so much!', time: '10:34 AM', self: false },
-];
 
 interface Contact {
-  id: string;
+  id: string; // This will be the Firebase UID for users, or patient/nurse ID
   name: string;
   email: string | null;
-  role: 'patient' | 'nurse'; // Explicitly patient or nurse for this context
+  role: 'patient' | 'nurse' | 'admin' | 'user'; // Broader role definition
   avatarUrl: string;
-  lastMessage?: string; // Mock
-  unread?: number; // Mock
-  online?: boolean; // Mock
+  lastMessage?: string;
+  unread?: number;
+  online?: boolean;
   hint?: string;
 }
 
+interface Message {
+  id: string;
+  senderId: string;
+  text: string;
+  timestamp: Date | null; // Store as Date on client for easier formatting
+}
+
+const generateChatId = (uid1: string, uid2: string): string => {
+  return [uid1, uid2].sort().join('_');
+};
 
 export default function ChatPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [isLoadingContacts, setIsLoadingContacts] = useState(true);
+  const [errorContacts, setErrorContacts] = useState<string | null>(null);
   const { currentUser, userRole, loading: authLoading } = useAuth();
 
   const [selectedPatientIdFromDropdown, setSelectedPatientIdFromDropdown] = useState<string>("");
   const [selectedNurseIdFromDropdown, setSelectedNurseIdFromDropdown] = useState<string>("");
 
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+
   const loadContacts = useCallback(async () => {
     if (!currentUser) {
-      setError("Please log in to use chat.");
-      setIsLoading(false);
+      setErrorContacts("Please log in to use chat.");
+      setIsLoadingContacts(false);
       setContacts([]);
       return;
     }
-    setIsLoading(true);
-    setError(null);
+    setIsLoadingContacts(true);
+    setErrorContacts(null);
     try {
       const [patientsResult, nursesResult] = await Promise.all([
         fetchPatients(),
@@ -64,49 +89,45 @@ export default function ChatPage() {
 
       if (patientsResult.data) {
         const patientContactsMapped: Contact[] = patientsResult.data.map(p => ({
-          id: p.id,
+          id: p.id, // Patient's own ID from 'patients' collection
           name: p.name,
           email: p.email,
           role: 'patient',
           avatarUrl: p.avatarUrl || `https://placehold.co/40x40.png`,
-          lastMessage: "Click to start a conversation...", // Mock
-          unread: Math.floor(Math.random() * 3), // Mock
-          online: Math.random() > 0.5, // Mock
+          lastMessage: "Click to start conversation",
           hint: p.hint || 'person face',
         }));
         combinedContacts = [...combinedContacts, ...patientContactsMapped];
       } else {
         console.warn("[ChatPage] Failed to load patients for chat:", patientsResult.error);
-        setError(prev => prev ? `${prev} Failed to load patients.` : "Failed to load patients.");
+        setErrorContacts(prev => prev ? `${prev} Failed to load patients.` : "Failed to load patients.");
       }
 
       if (nursesResult.data) {
         const nurseContactsMapped: Contact[] = nursesResult.data.map(n => ({
-          id: n.id,
+          id: n.id, // Nurse's own ID from 'nurses' collection
           name: n.name,
           email: n.email,
           role: 'nurse',
           avatarUrl: n.avatar || `https://placehold.co/40x40.png`,
-          lastMessage: "Click to start a conversation...", // Mock
-          unread: Math.floor(Math.random() * 3), // Mock
-          online: Math.random() > 0.5, // Mock
+          lastMessage: "Click to start conversation",
           hint: n.hint || 'nurse medical',
         }));
         combinedContacts = [...combinedContacts, ...nurseContactsMapped];
       } else {
          console.warn("[ChatPage] Failed to load nurses for chat:", nursesResult.error);
-         setError(prev => prev ? `${prev} Failed to load nurses.` : "Failed to load nurses.");
+         setErrorContacts(prev => prev ? `${prev} Failed to load nurses.` : "Failed to load nurses.");
       }
       
       setContacts(combinedContacts);
       console.log("[ChatPage] Combined contacts from patients & nurses collections:", combinedContacts);
 
-      if (combinedContacts.length > 0) {
+      if (combinedContacts.length > 0 && !selectedContact) {
         let defaultContact: Contact | undefined;
-        if (userRole === 'patient') {
-          defaultContact = combinedContacts.find(c => c.role === 'nurse' && c.id !== currentUser?.uid);
+         if (userRole === 'patient') {
+          defaultContact = combinedContacts.find(c => c.role === 'nurse');
         } else { // admin or nurse
-          defaultContact = combinedContacts.find(c => c.role === 'patient' && c.id !== currentUser?.uid);
+          defaultContact = combinedContacts.find(c => c.role === 'patient');
           if (!defaultContact) {
             defaultContact = combinedContacts.find(c => c.role === 'nurse' && c.id !== currentUser?.uid);
           }
@@ -114,24 +135,113 @@ export default function ChatPage() {
         if (!defaultContact && combinedContacts.length > 0) {
            defaultContact = combinedContacts[0]?.id !== currentUser?.uid ? combinedContacts[0] : (combinedContacts[1] || null);
         }
-        setSelectedContact(defaultContact || null);
-        if (defaultContact?.role === 'patient') setSelectedPatientIdFromDropdown(defaultContact.id);
-        if (defaultContact?.role === 'nurse') setSelectedNurseIdFromDropdown(defaultContact.id);
+
+        if (defaultContact) {
+            // We don't auto-select from dropdowns, but user can click a contact from list
+            // setSelectedContact(defaultContact); 
+            // if (defaultContact.role === 'patient') setSelectedPatientIdFromDropdown(defaultContact.id);
+            // if (defaultContact.role === 'nurse') setSelectedNurseIdFromDropdown(defaultContact.id);
+        }
       }
 
     } catch (e: any) {
-      setError(`Failed to load contacts: ${e.message}`);
+      setErrorContacts(`Failed to load contacts: ${e.message}`);
       console.error("[ChatPage] Exception loading contacts:", e);
     } finally {
-      setIsLoading(false);
+      setIsLoadingContacts(false);
     }
-  }, [currentUser, userRole]);
+  }, [currentUser, userRole, selectedContact]);
 
   useEffect(() => {
     if (!authLoading) {
       loadContacts();
     }
   }, [authLoading, loadContacts]);
+
+  // Effect to listen for messages when selectedContact (and thus currentChatId) changes
+  useEffect(() => {
+    if (!currentUser || !selectedContact) {
+      setCurrentChatId(null);
+      setMessages([]);
+      return;
+    }
+
+    // IMPORTANT: For chat, the 'id' of a contact from 'patients' or 'nurses' collection
+    // might not be their Firebase Auth UID. Chat should ideally be between Firebase Auth UIDs.
+    // This simplified version assumes selectedContact.id IS the other user's UID for chat.
+    // A more robust system would map patient/nurse IDs to their auth UIDs if they are also users.
+    // For now, we use selectedContact.id as the other participant's ID.
+    const chatId = generateChatId(currentUser.uid, selectedContact.id);
+    setCurrentChatId(chatId);
+
+    const messagesQuery = query(
+      collection(db, "chats", chatId, "messages"),
+      orderBy("timestamp", "asc")
+    );
+
+    const unsubscribe = onSnapshot(messagesQuery, (querySnapshot) => {
+      const fetchedMessages: Message[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        fetchedMessages.push({
+          id: doc.id,
+          senderId: data.senderId,
+          text: data.text,
+          timestamp: data.timestamp instanceof Timestamp ? data.timestamp.toDate() : new Date(),
+        });
+      });
+      setMessages(fetchedMessages);
+    }, (error) => {
+      console.error("[ChatPage] Error fetching messages:", error);
+      setErrorContacts("Failed to load messages for this chat.");
+    });
+
+    return () => unsubscribe(); // Cleanup listener on component unmount or when chatId changes
+
+  }, [currentUser, selectedContact]);
+
+  // Scroll to bottom of messages when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+
+  const handleSendMessage = async () => {
+    if (!currentUser || !selectedContact || !currentChatId || newMessage.trim() === "") {
+      return;
+    }
+    setIsSending(true);
+    const messageText = newMessage.trim();
+    setNewMessage("");
+
+    try {
+      // Add message to subcollection
+      const messagesColRef = collection(db, "chats", currentChatId, "messages");
+      await addDoc(messagesColRef, {
+        senderId: currentUser.uid,
+        receiverId: selectedContact.id, // Assuming selectedContact.id is the other user's UID
+        text: messageText,
+        timestamp: serverTimestamp(),
+      });
+
+      // Update/create parent chat document
+      const chatDocRef = doc(db, "chats", currentChatId);
+      await setDoc(chatDocRef, {
+        participants: [currentUser.uid, selectedContact.id].sort(),
+        lastActivity: serverTimestamp(),
+        // You could also store lastMessageText snippet here for chat list previews
+        // participantNames: { [currentUser.uid]: currentUser.displayName || currentUser.email, [selectedContact.id]: selectedContact.name }
+      }, { merge: true }); // Merge true to create if not exists, or update lastActivity
+
+    } catch (error) {
+      console.error("Error sending message:", error);
+      // Optionally, re-add message to input or show error toast
+      setNewMessage(messageText); // Put message back if sending failed
+    } finally {
+      setIsSending(false);
+    }
+  };
+
 
   const patientContactsForDropdown = useMemo(() => {
     console.log("[ChatPage useMemo patientContactsForDropdown] Full 'contacts' list:", contacts);
@@ -189,68 +299,63 @@ export default function ChatPage() {
 
   return (
     <div className="h-[calc(100vh-100px)] flex flex-col md:flex-row gap-4">
-      {/* Contacts Panel */}
       <Card className="w-full md:w-1/3 lg:w-1/4 shadow-lg flex flex-col">
         <CardHeader className="border-b">
           <CardTitle className="flex items-center justify-between">
             Conversations
             <Button variant="ghost" size="icon" aria-label="New Conversation"><MessageSquarePlus className="h-5 w-5" /></Button>
           </CardTitle>
+           <p className="text-xs text-muted-foreground pt-1">Select a user from the list or dropdowns to start chatting.</p>
 
           <div className="space-y-2 pt-2">
             {(userRole === 'admin' || userRole === 'nurse') && (
-              <Select value={selectedPatientIdFromDropdown} onValueChange={handleSelectPatientFromDropdown}>
+              <Select value={selectedPatientIdFromDropdown} onValueChange={handleSelectPatientFromDropdown} disabled={isLoadingContacts}>
                 <SelectTrigger className="w-full">
                   <Users className="mr-2 h-4 w-4 text-muted-foreground" />
                   <SelectValue placeholder="Select a Patient..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {patientContactsForDropdown.map(p => (
+                  {patientContactsForDropdown.length > 0 ? patientContactsForDropdown.map(p => (
                     <SelectItem key={p.id} value={p.id}>{p.name} (Patient)</SelectItem>
-                  ))}
-                   {patientContactsForDropdown.length === 0 && <div className="p-2 text-sm text-muted-foreground">No patients found.</div>}
+                  )) : <div className="p-2 text-sm text-muted-foreground">No patients found.</div>}
                 </SelectContent>
               </Select>
             )}
-            {/* Nurse dropdown visible to all roles including patient */}
-            <Select value={selectedNurseIdFromDropdown} onValueChange={handleSelectNurseFromDropdown}>
+            <Select value={selectedNurseIdFromDropdown} onValueChange={handleSelectNurseFromDropdown} disabled={isLoadingContacts}>
               <SelectTrigger className="w-full">
                 <Stethoscope className="mr-2 h-4 w-4 text-muted-foreground" />
                 <SelectValue placeholder="Select a Nurse..." />
               </SelectTrigger>
               <SelectContent>
-                {nurseContactsForDropdown.map(n => (
+                 {nurseContactsForDropdown.length > 0 ? nurseContactsForDropdown.map(n => (
                   <SelectItem key={n.id} value={n.id}>{n.name} (Nurse)</SelectItem>
-                ))}
-                 {nurseContactsForDropdown.length === 0 && <div className="p-2 text-sm text-muted-foreground">No nurses found.</div>}
+                )) : <div className="p-2 text-sm text-muted-foreground">No nurses found.</div>}
               </SelectContent>
             </Select>
           </div>
-
         </CardHeader>
         <ScrollArea className="flex-grow">
           <CardContent className="p-0">
-            {isLoading && (
+            {isLoadingContacts && (
               <div className="p-4 text-center text-muted-foreground">
                 <Loader2 className="mx-auto h-6 w-6 animate-spin mb-2" /> Loading contacts...
               </div>
             )}
-            {!isLoading && error && (
+            {!isLoadingContacts && errorContacts && (
               <Alert variant="destructive" className="m-3">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Error Loading Contacts</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>{errorContacts}</AlertDescription>
               </Alert>
             )}
-            {!isLoading && !error && contacts.length === 0 && (
+            {!isLoadingContacts && !errorContacts && contacts.length === 0 && (
               <p className="p-4 text-center text-muted-foreground">No patients or nurses available for chat.</p>
             )}
-            {/* Main contact list - filtered by user role visibility implicitly by combinedContacts logic */}
-            {!isLoading && !error && contacts.filter(c => {
+            {!isLoadingContacts && !errorContacts && contacts.filter(c => {
                 if (!currentUser) return false;
-                if (c.id === currentUser.uid) return false; // Exclude self
-                if (userRole === 'patient') return c.role === 'nurse'; // Patients only see nurses
-                return true; // Admins and Nurses see everyone else
+                if (c.id === currentUser.uid) return false; 
+                if (userRole === 'patient') return c.role === 'nurse';
+                return true;
             }).map(contact => (
               <div
                 key={contact.id}
@@ -263,25 +368,20 @@ export default function ChatPage() {
                 <Avatar className="h-10 w-10 relative">
                   <AvatarImage src={contact.avatarUrl} alt={contact.name} data-ai-hint={contact.hint} />
                   <AvatarFallback>{contact.name?.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                  {contact.online && <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />}
+                  {/* Online status removed for simplicity, can be re-added with presence system */}
                 </Avatar>
                 <div className="flex-1">
                   <p className="font-semibold text-sm">{contact.name} <span className="text-xs text-muted-foreground">({contact.role})</span></p>
                   <p className="text-xs text-muted-foreground truncate">{contact.lastMessage}</p>
                 </div>
-                {contact.unread && contact.unread > 0 && (
-                  <span className="bg-primary text-primary-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
-                    {contact.unread}
-                  </span>
-                )}
+                {/* Unread count removed for simplicity */}
               </div>
             ))}
           </CardContent>
         </ScrollArea>
       </Card>
 
-      {/* Chat Area */}
-      {selectedContact ? (
+      {selectedContact && currentUser ? (
         <Card className="flex-1 shadow-lg flex flex-col">
           <CardHeader className="border-b">
             <div className="flex items-center justify-between">
@@ -289,12 +389,11 @@ export default function ChatPage() {
                 <Avatar className="h-10 w-10 relative">
                   <AvatarImage src={selectedContact.avatarUrl} alt={selectedContact.name} data-ai-hint={selectedContact.hint} />
                   <AvatarFallback>{selectedContact.name?.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                  {selectedContact.online && <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />}
                 </Avatar>
                 <div>
                   <CardTitle>{selectedContact.name}</CardTitle>
-                  <CardDescription className={selectedContact.online ? "text-green-500" : "text-muted-foreground"}>
-                    {selectedContact.online ? "Online" : "Offline"} ({selectedContact.role})
+                  <CardDescription className="text-muted-foreground">
+                    Chatting as {currentUser.displayName || currentUser.email}
                   </CardDescription>
                 </div>
               </div>
@@ -305,32 +404,45 @@ export default function ChatPage() {
             </div>
           </CardHeader>
           <ScrollArea className="flex-grow p-4 space-y-4 bg-muted/30">
-              {mockMessages.map(msg => (
-                   <div key={msg.id} className={`flex ${msg.self ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-xs lg:max-w-md p-3 rounded-lg shadow-sm ${msg.self ? 'bg-primary text-primary-foreground' : 'bg-card text-card-foreground'}`}>
-                          <p className="text-sm">{msg.text}</p>
-                          <p className={`text-xs mt-1 ${msg.self ? 'text-primary-foreground/70 text-right' : 'text-muted-foreground text-left'}`}>{msg.time}</p>
+              {messages.map(msg => (
+                   <div key={msg.id} className={`flex flex-col ${msg.senderId === currentUser.uid ? 'items-end' : 'items-start'}`}>
+                      <div className={`max-w-xs lg:max-w-md p-3 rounded-lg shadow-sm ${msg.senderId === currentUser.uid ? 'bg-primary text-primary-foreground' : 'bg-card text-card-foreground'}`}>
+                          <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
                       </div>
+                      {msg.timestamp && (
+                        <p className={`text-xs mt-1 ${msg.senderId === currentUser.uid ? 'text-muted-foreground text-right self-end' : 'text-muted-foreground text-left self-start'}`}>
+                           {formatDistanceToNow(msg.timestamp, { addSuffix: true })}
+                        </p>
+                      )}
                   </div>
               ))}
+              <div ref={messagesEndRef} />
           </ScrollArea>
-          <CardContent className="p-4 border-t bg-background">
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" aria-label="Attach file"><Paperclip className="h-5 w-5" /></Button>
-              <Input placeholder="Type your message..." className="flex-1" />
-              <Button aria-label="Send message"><Send className="h-5 w-5" /></Button>
-            </div>
-          </CardContent>
+          <CardFooter className="p-4 border-t bg-background">
+            <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="flex items-center gap-2 w-full">
+              <Button variant="ghost" size="icon" aria-label="Attach file" type="button"><Paperclip className="h-5 w-5" /></Button>
+              <Input 
+                placeholder="Type your message..." 
+                className="flex-1" 
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                disabled={isSending || !currentChatId}
+              />
+              <Button aria-label="Send message" type="submit" disabled={isSending || !currentChatId || newMessage.trim() === ""}>
+                {isSending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+              </Button>
+            </form>
+          </CardFooter>
         </Card>
       ) : (
         <Card className="flex-1 shadow-lg flex flex-col items-center justify-center bg-muted/30">
             <MessageSquarePlus className="h-16 w-16 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">Select a patient or nurse to start chatting.</p>
-            {isLoading && <p className="text-sm text-muted-foreground mt-2">Loading contacts...</p>}
-             {!isLoading && !error && contacts.length > 0 && !selectedContact && (
+            {isLoadingContacts && <p className="text-sm text-muted-foreground mt-2">Loading contacts...</p>}
+             {!isLoadingContacts && !errorContacts && contacts.length > 0 && !selectedContact && (
                 <p className="text-sm text-muted-foreground mt-2">Use the dropdowns or click on a contact from the list.</p>
             )}
-            {!isLoading && !error && contacts.length === 0 && (
+            {!isLoadingContacts && !errorContacts && contacts.length === 0 && (
                 <p className="text-sm text-muted-foreground mt-2">No patients or nurses found in the database to chat with.</p>
             )}
         </Card>

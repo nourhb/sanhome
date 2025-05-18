@@ -2,7 +2,7 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ListChecks, Activity, FileClock, PlusCircle, ListFilter, Loader2, AlertCircle, Eye, Edit, XCircle } from "lucide-react";
+import { ListChecks, Activity, FileClock, PlusCircle, ListFilter, Loader2, AlertCircle, Eye, Edit, XCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,7 +16,7 @@ import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import type { CareLogItem, PatientListItem, AddCareLogFormValues, UpdateCareLogFormValues } from "@/app/actions";
-import { fetchCareLogs, fetchPatients, addCareLog, updateCareLog } from "@/app/actions";
+import { fetchCareLogs, fetchPatients, addCareLog, updateCareLog, deleteCareLog } from "@/app/actions";
 import { format, parseISO } from "date-fns";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -29,6 +29,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -56,6 +57,9 @@ export default function CareTrackingPage() {
   const [selectedLogForView, setSelectedLogForView] = useState<CareLogItem | null>(null);
   const [isViewLogDialogOpen, setIsViewLogDialogOpen] = useState(false);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [logToDeleteId, setLogToDeleteId] = useState<string | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+
 
   const defaultFormValues = {
     patientId: "",
@@ -154,6 +158,27 @@ export default function CareTrackingPage() {
     setEditingLogId(null);
     form.reset(defaultFormValues);
   };
+
+  const handleDeleteLog = (logId: string) => {
+    setLogToDeleteId(logId);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!logToDeleteId) return;
+    setFormIsLoading(true); // Can reuse formIsLoading or add a specific one for delete
+    const result = await deleteCareLog(logToDeleteId);
+    if (result.success) {
+        toast({ title: "Care Log Deleted", description: result.message });
+        loadData(); // Refresh logs
+    } else {
+        toast({ variant: "destructive", title: "Failed to Delete Log", description: result.message });
+    }
+    setFormIsLoading(false);
+    setIsDeleteConfirmOpen(false);
+    setLogToDeleteId(null);
+  };
+
 
   if (authLoading) {
     return (
@@ -304,11 +329,14 @@ export default function CareTrackingPage() {
                           <TableCell><Badge variant="secondary">{log.careType}</Badge></TableCell>
                           <TableCell className="hidden sm:table-cell">{log.loggedBy}</TableCell>
                           <TableCell className="text-right space-x-1">
-                              <Button variant="ghost" size="sm" onClick={() => handleViewLog(log)} title="View Details">
+                              <Button variant="ghost" size="icon" onClick={() => handleViewLog(log)} title="View Details">
                                 <Eye className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="sm" onClick={() => handleEditLog(log)} title="Edit Log">
+                              <Button variant="ghost" size="icon" onClick={() => handleEditLog(log)} title="Edit Log">
                                 <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => handleDeleteLog(log.id)} title="Delete Log" className="text-destructive hover:text-destructive/80">
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                           </TableCell>
                         </TableRow>
@@ -345,6 +373,26 @@ export default function CareTrackingPage() {
             </div>
             <AlertDialogFooter>
               <AlertDialogAction onClick={() => setIsViewLogDialogOpen(false)}>Close</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {isDeleteConfirmOpen && (
+        <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete this care log? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => { setIsDeleteConfirmOpen(false); setLogToDeleteId(null); }}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                {formIsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4"/>}
+                Delete
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

@@ -723,6 +723,7 @@ export async function fetchVideoConsults(): Promise<{ data?: VideoConsultListIte
 // ALSO: Firebase Auth user creation via client SDK (createUserWithEmailAndPassword) from a server action can be tricky with auth context.
 // This script tries its best but if "auth/internal-error" or "permission-denied" occurs during user creation,
 // it's a sign of this context issue. Admin SDK is more reliable for backend user creation but can't be used directly in server actions.
+console.log("[ACTION_LOG] Defining seedDatabase function.");
 
 const firstNames = [
   "Foulen", "Amina", "Mohamed", "Fatma", "Ali", "Sarah", "Youssef", "Hiba", "Ahmed", "Nour",
@@ -829,14 +830,14 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     console.log("[ACTION_LOG] seedDatabase: Checking 'users' collection in Firestore...");
     let usersCount = 0;
     try {
-      console.log("[ACTION_LOG] seedDatabase: Attempting getCountFromServer for 'users'.");
+      console.log("[ACTION_LOG] seedDatabase: Attempting getCountFromServer for 'users'. This is the first Firestore read.");
       const usersCollRef = collection(firestoreInstance, "users");
       const usersCountSnapshot = await getCountFromServer(usersCollRef);
       usersCount = usersCountSnapshot.data().count;
       console.log(`[ACTION_LOG] seedDatabase: Found ${usersCount} existing user documents in Firestore. Count: ${usersCount}.`);
       results.users = `Checked 'users' collection, found ${usersCount} documents. `;
     } catch (e: any) {
-      const specificError = `Failed to get count for 'users' collection: ${e.message} (Code: ${e.code || 'N/A'}). Ensure Firestore API is enabled and rules allow reads.`;
+      const specificError = `Failed to get count for 'users' collection: ${e.message} (Code: ${e.code || 'N/A'}). Ensure Firestore API is enabled and rules allow reads (potentially temporarily open rules for seeding: allow read, write: if true;).`;
       console.error(`[ACTION_ERROR] seedDatabase: ${specificError}`, e);
       return { success: false, message: `Database seeding failed: ${specificError}`, details: results };
     }
@@ -928,7 +929,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
         const patientsCollRef = collection(firestoreInstance, "patients");
         const patientsCountSnapshot = await getCountFromServer(patientsCollRef);
         patientsCount = patientsCountSnapshot.data().count;
-        console.log(`[ACTION_LOG] seedDatabase: Found ${patientsCount} existing patient documents in Firestore. Count: ${patientsCount}.`);
+        console.log(`[ACTION_LOG] seedDatabase: Found ${patientsCount} existing patient documents in Firestore. Count from getCountFromServer: ${patientsCount}.`);
         results.patients = `Checked 'patients' collection, found ${patientsCount} documents. `;
     } catch (e: any) {
         const specificError = `Failed to get count for 'patients' collection: ${e.message} (Code: ${e.code || 'N/A'}). Ensure Firestore API is enabled and rules allow reads.`;
@@ -1141,7 +1142,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
   } catch (error: any) {
     const firebaseErrorCode = error.code || 'N/A';
     const firebaseErrorMessage = error.message || 'Unknown error';
-    let specificMessage = `Database seeding failed critically. Firebase: ${firebaseErrorMessage} (Code: ${firebaseErrorCode}). Ensure Firestore/Auth rules allow writes for authenticated users and that you are logged in when triggering this. Also check project API enablement. Check server console for specific Firebase error codes. Full Error: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
+    let specificMessage = `Database seeding failed critically. Firebase: ${firebaseErrorMessage} (Code: ${firebaseErrorCode}). Full Error: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
 
     console.error(`[ACTION_ERROR] seedDatabase: CRITICAL error during seeding process. Code: ${firebaseErrorCode}, Message: ${firebaseErrorMessage}`, error);
     console.error("[ACTION_ERROR] Full error object:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
@@ -1518,13 +1519,13 @@ export async function addCareLog(values: AddCareLogFormValues, loggedByName: str
     const patientDoc = await getDoc(doc(firestoreInstance, "patients", validatedValues.patientId));
     if (patientDoc.exists()) patientName = patientDoc.data().name;
 
-    // Reordered for emphasis and added comment
+    // Data to be saved in Firestore
     const newCareLogData = {
       patientId: validatedValues.patientId,
       patientName,
+      careDate: Timestamp.fromDate(validatedValues.careDateTime), // Ensure this is correctly using the validated DateTime
       careType: validatedValues.careType,
-      careDate: Timestamp.fromDate(validatedValues.careDateTime),
-      notes: validatedValues.notes, // Ensuring notes are explicitly part of the saved data
+      notes: validatedValues.notes, // Notes being saved
       loggedBy: loggedByName,
       createdAt: serverTimestamp(),
     };
@@ -1560,24 +1561,27 @@ export async function updateCareLog(logId: string, values: UpdateCareLogFormValu
 
     let patientName = "N/A";
     // Fetch patient name if patientId is part of the update
-    if (validatedValues.patientId) {
-      const patientDoc = await getDoc(doc(firestoreInstance, "patients", validatedValues.patientId));
-      if (patientDoc.exists()) {
+    // This assumes patientId might change, though usually it wouldn't for a log update.
+    // If patientId cannot change for a log, this patient fetch can be omitted.
+    const patientDoc = await getDoc(doc(firestoreInstance, "patients", validatedValues.patientId));
+    if (patientDoc.exists()) {
         patientName = patientDoc.data().name;
-      } else {
-        console.warn(`[ACTION_WARN] updateCareLog: Patient with ID ${validatedValues.patientId} not found. Patient name will be 'N/A'.`);
-      }
+    } else {
+        // This case might be an error if patientId is supposed to be fixed for a log.
+        // For now, just log a warning.
+        console.warn(`[ACTION_WARN] updateCareLog: Patient with ID ${validatedValues.patientId} not found during update. Patient name will be 'N/A' if it was meant to change or was not previously set.`);
     }
 
+
     const careLogRef = doc(firestoreInstance, "careLogs", logId);
-    // Reordered for emphasis and added comment
+    // Prepare data for Firestore update
     const updatedCareLogData = {
       patientId: validatedValues.patientId,
-      patientName,
+      patientName, // This will update the patientName if it changed or was 'N/A'
       careType: validatedValues.careType,
-      careDate: Timestamp.fromDate(validatedValues.careDateTime),
-      notes: validatedValues.notes, // Ensuring notes are explicitly part of the updated data
-      // loggedBy and createdAt are typically not updated
+      careDate: Timestamp.fromDate(validatedValues.careDateTime), // Ensure this uses the validated DateTime
+      notes: validatedValues.notes, // Notes being updated
+      // loggedBy and createdAt are typically not updated during an edit
     };
 
     await updateDoc(careLogRef, updatedCareLogData);
@@ -1591,6 +1595,27 @@ export async function updateCareLog(logId: string, values: UpdateCareLogFormValu
     }
     return { success: false, message: `Failed to update care log: ${error.message}` };
   }
+}
+
+export async function deleteCareLog(logId: string): Promise<{ success: boolean; message?: string }> {
+    console.log(`[ACTION_LOG] deleteCareLog: Attempting to delete log ID: ${logId}`);
+    if (!firestoreInstance) {
+        console.error("[ACTION_ERROR] deleteCareLog: Firestore instance is not available.");
+        return { success: false, message: "Database service not available." };
+    }
+    if (!logId) {
+        console.error("[ACTION_ERROR] deleteCareLog: Log ID is required.");
+        return { success: false, message: "Log ID is required for deletion." };
+    }
+    try {
+        const careLogRef = doc(firestoreInstance, "careLogs", logId);
+        await deleteDoc(careLogRef);
+        console.log(`[ACTION_LOG] deleteCareLog: Successfully deleted care log ${logId}.`);
+        return { success: true, message: "Care log deleted successfully." };
+    } catch (error: any) {
+        console.error(`[ACTION_ERROR] deleteCareLog: Error deleting care log ${logId}:`, error);
+        return { success: false, message: `Failed to delete care log: ${error.message}` };
+    }
 }
 
 

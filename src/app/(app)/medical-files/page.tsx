@@ -115,6 +115,8 @@ export default function MedicalFilesPage() {
   };
   
   const filteredFiles = files.filter(file => 
+    selectedPatientId ? file.patientId === selectedPatientId : true // Show only selected patient's files if one is selected
+  ).filter(file =>
     selectedFilterType === "All" || file.fileType.toLowerCase().includes(selectedFilterType.toLowerCase())
   );
 
@@ -148,12 +150,17 @@ export default function MedicalFilesPage() {
       };
       
       doc.setFontSize(18);
-      doc.text(`Medical Report for ${patient.name}`, margin, yPos);
+      doc.text(`Medical Report for ${patient.name || 'N/A'}`, margin, yPos);
       yPos += 10;
 
+      doc.setFontSize(10);
+      doc.text(`Report Generated On: ${format(new Date(), "PPpp")}`, margin, yPos);
+      yPos += 10;
+      addPageIfNeeded();
+
       doc.setFontSize(12);
-      doc.text(`Patient ID: ${patient.id}`, margin, yPos); yPos += 7;
-      doc.text(`Age: ${patient.age}`, margin, yPos); yPos += 7;
+      doc.text(`Patient ID: ${patient.id || 'N/A'}`, margin, yPos); yPos += 7;
+      doc.text(`Age: ${patient.age || 'N/A'}`, margin, yPos); yPos += 7;
       doc.text(`Email: ${patient.email || 'N/A'}`, margin, yPos); yPos += 7;
       doc.text(`Phone: ${patient.phone || 'N/A'}`, margin, yPos); yPos += 7;
       doc.text(`Address: ${patient.address || 'N/A'}`, margin, yPos); yPos += 10;
@@ -163,28 +170,27 @@ export default function MedicalFilesPage() {
       doc.text("Medical History (Summary)", margin, yPos); yPos += 7;
       doc.setFontSize(10);
       doc.text(`Mobility: ${patient.mobilityStatus || 'N/A'}`, margin, yPos); yPos += 5;
-      doc.text(`Pathologies: ${patient.pathologies?.join(', ') || 'None reported'}`, margin, yPos); yPos += 5;
-      doc.text(`Allergies: ${patient.allergies?.join(', ') || 'None reported'}`, margin, yPos); yPos += 10;
+      doc.text(`Pathologies: ${(Array.isArray(patient.pathologies) && patient.pathologies.length > 0) ? patient.pathologies.join(', ') : 'None reported'}`, margin, yPos); yPos += 5;
+      doc.text(`Allergies: ${(Array.isArray(patient.allergies) && patient.allergies.length > 0) ? patient.allergies.join(', ') : 'None reported'}`, margin, yPos); yPos += 10;
       addPageIfNeeded();
       
-      // Placeholder for medications and visit summaries (can be expanded later)
       doc.setFontSize(14);
       doc.text("Current Medications (Placeholder)", margin, yPos); yPos += 7;
       doc.setFontSize(10);
-      doc.text("Details to be fetched or entered.", margin, yPos); yPos += 10;
+      doc.text("Detailed medication list would be populated here from patient records.", margin, yPos); yPos += 10;
       addPageIfNeeded();
 
       doc.setFontSize(14);
       doc.text("Medical Files", margin, yPos); yPos += 7;
-      addPageIfNeeded(patientFiles.length * 8 + 20); // Estimate table height
+      addPageIfNeeded(patientFiles.length * 8 + 20); 
 
       if (patientFiles.length > 0) {
         const tableColumn = ["File Name", "Type", "Date Uploaded", "Size (MB)"];
         const tableRows = patientFiles.map(file => [
-          file.fileName,
-          file.fileType,
+          file.fileName || "N/A",
+          file.fileType || "N/A",
           isValid(parseISO(file.uploadDate)) ? format(parseISO(file.uploadDate), "PP") : file.uploadDate,
-          (file.size / (1024 * 1024)).toFixed(2)
+          file.size ? (file.size / (1024 * 1024)).toFixed(2) : "N/A"
         ]);
         (doc as any).autoTable({
           head: [tableColumn],
@@ -195,7 +201,7 @@ export default function MedicalFilesPage() {
           bodyStyles: { fontSize: 9 },
           margin: { left: margin, right: margin },
           didDrawPage: (data: any) => {
-            yPos = data.cursor.y + 10; // Update yPos after table
+            yPos = data.cursor.y + 10; 
           }
         });
       } else {
@@ -203,7 +209,7 @@ export default function MedicalFilesPage() {
         doc.text("No medical files found for this patient.", margin, yPos); yPos += 7;
       }
       
-      doc.save(`medical_report_${patient.name.replace(/\s/g, '_')}_${patient.id}.pdf`);
+      doc.save(`medical_report_${(patient.name || 'patient').replace(/\s/g, '_')}_${patient.id}.pdf`);
       toast({ title: "PDF Generated", description: "Report downloaded successfully." });
 
     } catch (e: any) {
@@ -288,7 +294,7 @@ export default function MedicalFilesPage() {
             {!isLoading && !error && filteredFiles.length === 0 && (
                <div className="border rounded-lg overflow-hidden">
                 <Table>
-                  <TableHeader><TableRow><TableHead>File Name</TableHead><TableHead>Patient</TableHead><TableHead>Type</TableHead><TableHead>Date</TableHead><TableHead>Size</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>File Name</TableHead><TableHead className="hidden md:table-cell">Patient</TableHead><TableHead>Type</TableHead><TableHead className="hidden sm:table-cell">Date</TableHead><TableHead className="hidden lg:table-cell">Size</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                   <TableBody>
                     <TableRow>
                       <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
@@ -324,7 +330,7 @@ export default function MedicalFilesPage() {
                         <TableCell className="hidden md:table-cell">{file.patientName}</TableCell>
                         <TableCell><Badge variant="outline">{file.fileType || "Unknown"}</Badge></TableCell>
                         <TableCell className="hidden sm:table-cell">{isValid(parseISO(file.uploadDate)) ? format(parseISO(file.uploadDate), "PP") : 'N/A'}</TableCell>
-                        <TableCell className="hidden lg:table-cell">{(file.size / (1024*1024)).toFixed(2)}MB</TableCell>
+                        <TableCell className="hidden lg:table-cell">{file.size ? (file.size / (1024*1024)).toFixed(2) + 'MB' : 'N/A'}</TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" className="text-primary hover:text-primary/80" asChild>
                             <a href={file.fileUrl} target="_blank" rel="noopener noreferrer">
@@ -375,4 +381,3 @@ export default function MedicalFilesPage() {
     </div>
   );
 }
-

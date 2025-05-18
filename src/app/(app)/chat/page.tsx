@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input"; // Ensure Input is imported
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Send, MessageSquarePlus, UserSearch, Paperclip, Phone, Video, Loader2, AlertCircle } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -33,6 +33,8 @@ interface Contact extends UserForAdminList {
 export default function ChatPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [searchTerm, setSearchTerm] = useState(''); // State for the search input value
+  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { currentUser, loading: authLoading } = useAuth();
@@ -71,6 +73,26 @@ export default function ChatPage() {
     }
   }, [currentUser]);
 
+  // Filter contacts based on search term and user role
+  useEffect(() => {
+    if (currentUser) {
+      const lowerCaseSearchTerm = searchTerm.toLowerCase();
+      const filtered = contacts.filter(contact => {
+        const matchesSearchTerm = contact.name.toLowerCase().includes(lowerCaseSearchTerm);
+
+        if (currentUser.appRole === 'admin' || currentUser.appRole === 'nurse') {
+          // Admin and Nurse can search for both nurse and patient
+          return matchesSearchTerm;
+        } else if (currentUser.appRole === 'patient') {
+          // Patient can only search for nurses
+          return matchesSearchTerm && contact.role === 'nurse';
+        }
+        return false; // Should not happen with defined roles
+      });
+      setFilteredContacts(filtered);
+    }
+  // Dependency array includes searchTerm, contacts, and currentUser
+  }, [searchTerm, contacts, currentUser]);
   useEffect(() => {
     if(!authLoading){
       loadContacts();
@@ -83,7 +105,7 @@ export default function ChatPage() {
        <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
        <p>Loading authentication...</p>
      </div>
-   );
+    );
  }
   
   return (
@@ -96,8 +118,31 @@ export default function ChatPage() {
             <Button variant="ghost" size="icon" aria-label="New Conversation"><MessageSquarePlus className="h-5 w-5" /></Button>
           </CardTitle>
           <div className="relative">
-            <UserSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search contacts..." className="pl-8" />
+            <UserSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /> {/* Search icon */}
+            <Input
+              placeholder="Search contacts..."
+              className="pl-8"
+              value={searchTerm} // Bind input value to searchTerm state
+              onChange={(e) => setSearchTerm(e.target.value)} // Update searchTerm on input change
+            />
+            {/* Display filtered contacts list below the search input */}
+            {searchTerm && (
+              <div className="absolute z-10 w-full bg-card border border-border rounded-md mt-1 shadow-lg max-h-60 overflow-y-auto">
+                {filteredContacts.length > 0 ? (
+                  filteredContacts.map(contact => (
+                    <div key={contact.id} className="flex items-center gap-3 p-2 border-b hover:bg-accent cursor-pointer" onClick={() => { setSelectedContact(contact); setSearchTerm(''); }}>
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={contact.avatarPath} alt={contact.name} data-ai-hint={contact.hint} />
+                        <AvatarFallback>{contact.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+                      </Avatar>
+                      <p className="text-sm font-semibold">{contact.name} ({contact.role})</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="p-2 text-center text-muted-foreground text-sm">No matching contacts found.</p>
+                )}
+              </div>
+            )}
           </div>
         </CardHeader>
         <ScrollArea className="flex-grow">
@@ -118,7 +163,7 @@ export default function ChatPage() {
               <p className="p-4 text-center text-muted-foreground">No contacts available.</p>
             )}
             {!isLoading && !error && contacts.map(contact => (
-              <div 
+              <div
                 key={contact.id} 
                 className={`flex items-center gap-3 p-3 border-b hover:bg-accent/50 cursor-pointer ${selectedContact?.id === contact.id ? 'bg-accent/70' : ''}`}
                 onClick={() => setSelectedContact(contact)}

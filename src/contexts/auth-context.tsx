@@ -73,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data();
           setCurrentUser({ ...user, appRole: userData.role } as AppUser);
-          setUserRole(userData.role || null); // Set the role based on Firestore data
+          setUserRole(userData.role || null); // Set the role based on Firestore data 
         } else {
           // No custom profile yet, or role not set
           setCurrentUser(user as AppUser);
@@ -119,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         setCurrentUser({ ...fbUser, appRole: values.role } as AppUser);
         setUserRole(values.role);
+
         await sendEmailVerification(fbUser);
       }
       return { user: fbUser };

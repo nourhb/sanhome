@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import * as VisuallyHidden from "@radix-ui/react-visually-hidden"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
 
@@ -33,6 +34,11 @@ const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, ...props }, ref) => (
+  // Ensure DialogContent has an accessible title for screen readers.
+  // If a title is not provided as a direct child, consider adding a visually hidden one.
+  // Radix UI recommends providing a DialogTitle component within DialogContent.
+  // Optionally, a DialogDescription can be provided as well.
+
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content

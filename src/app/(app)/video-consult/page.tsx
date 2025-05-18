@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Video, LogIn, LogOut, AlertCircle, CalendarPlus, List, RefreshCw, User, BriefcaseMedical, ClockIcon, XCircle } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { fetchVideoConsults, type VideoConsultListItem } from '@/app/actions';

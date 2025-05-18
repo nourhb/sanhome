@@ -34,7 +34,7 @@ const scheduleVideoConsultFormSchema = z.object({
   patientId: z.string().min(1, { message: "Patient selection is required." }),
   nurseId: z.string().min(1, { message: "Nurse selection is required." }),
   consultationDate: z.date({ required_error: "Consultation date is required." }),
-  consultationTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, { message: "Invalid time format (HH:MM)."}),
+  consultationTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, { message: "Invalid time format (HH:MM)." }),
 });
 
 type ScheduleVideoConsultFormValues = z.infer<typeof scheduleVideoConsultFormSchema>;
@@ -112,6 +112,7 @@ export default function ScheduleVideoConsultPage() {
     startTransition(async () => {
       const [hours, minutes] = values.consultationTime.split(':').map(Number);
       const consultationDateTime = new Date(values.consultationDate);
+      // Ensure time is correctly set on the date object
       consultationDateTime.setHours(hours, minutes, 0, 0);
 
       const result = await scheduleVideoConsult({

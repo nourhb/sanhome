@@ -3,15 +3,15 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Send, MessageSquarePlus, UserSearch, Paperclip, Phone, Video, Loader2, AlertCircle, Users, Stethoscope } from "lucide-react";
+import { Send, MessageSquarePlus, Paperclip, Phone, Video, Loader2, AlertCircle, Users, Stethoscope } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import { fetchUsersForAdmin, type UserForAdminList } from "@/app/actions";
+import { fetchPatients, fetchNurses, type PatientListItem, type NurseListItem } from "@/app/actions";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input"; // Re-add Input for message typing
 
 // Mock messages - real chat requires a backend and real-time service
 const mockMessages = [
@@ -22,11 +22,15 @@ const mockMessages = [
     { id: 'm5', senderId: 'user1', text: 'No, that was all. Thank you so much!', time: '10:34 AM', self: false },
 ];
 
-interface Contact extends UserForAdminList {
-  avatarPath?: string;
-  lastMessage?: string;
-  unread?: number;
-  online?: boolean;
+interface Contact {
+  id: string;
+  name: string;
+  email: string | null;
+  role: 'patient' | 'nurse'; // Explicitly patient or nurse for this context
+  avatarUrl: string;
+  lastMessage?: string; // Mock
+  unread?: number; // Mock
+  online?: boolean; // Mock
   hint?: string;
 }
 
@@ -51,43 +55,70 @@ export default function ChatPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await fetchUsersForAdmin();
-      if (result.data) {
-        const fetchedContacts: Contact[] = result.data.map(user => ({
-          ...user,
-          avatarUrl: user.avatarUrl || `https://placehold.co/40x40.png`, // Ensure avatarUrl is part of UserForAdminList or handled
-          avatarPath: user.avatarUrl || `https://placehold.co/40x40.png`,
-          lastMessage: "Click to start a conversation...",
-          unread: Math.floor(Math.random() * 3),
-          online: Math.random() > 0.5,
-          hint: user.hint || 'person ' + (user.name?.split(' ')[0] || 'contact').toLowerCase(),
+      const [patientsResult, nursesResult] = await Promise.all([
+        fetchPatients(),
+        fetchNurses()
+      ]);
+
+      let combinedContacts: Contact[] = [];
+
+      if (patientsResult.data) {
+        const patientContactsMapped: Contact[] = patientsResult.data.map(p => ({
+          id: p.id,
+          name: p.name,
+          email: p.email,
+          role: 'patient',
+          avatarUrl: p.avatarUrl || `https://placehold.co/40x40.png`,
+          lastMessage: "Click to start a conversation...", // Mock
+          unread: Math.floor(Math.random() * 3), // Mock
+          online: Math.random() > 0.5, // Mock
+          hint: p.hint || 'person face',
         }));
-        setContacts(fetchedContacts);
-        console.log("[ChatPage] Initial contacts loaded (from fetchUsersForAdmin):", fetchedContacts);
-
-        if (fetchedContacts.length > 0) {
-          let defaultContact: Contact | undefined;
-          if (userRole === 'patient') {
-            defaultContact = fetchedContacts.find(c => c.role === 'nurse' && (!currentUser || c.id !== currentUser.uid));
-          } else { // admin or nurse
-            defaultContact = fetchedContacts.find(c => c.role === 'patient' && (!currentUser || c.id !== currentUser.uid));
-            if (!defaultContact) { // if no patients, try a nurse
-                defaultContact = fetchedContacts.find(c => c.role === 'nurse' && (!currentUser || c.id !== currentUser.uid));
-            }
-          }
-           // Fallback if no specific default found
-          if (!defaultContact && fetchedContacts.length > 0) {
-             defaultContact = fetchedContacts[0]?.id !== currentUser?.uid ? fetchedContacts[0] : (fetchedContacts[1] || null);
-          }
-          setSelectedContact(defaultContact || null);
-          if (defaultContact?.role === 'patient') setSelectedPatientIdFromDropdown(defaultContact.id);
-          if (defaultContact?.role === 'nurse') setSelectedNurseIdFromDropdown(defaultContact.id);
-        }
-
+        combinedContacts = [...combinedContacts, ...patientContactsMapped];
       } else {
-        setError(result.error || "Failed to load contacts.");
-        console.error("[ChatPage] Error loading contacts:", result.error);
+        console.warn("[ChatPage] Failed to load patients for chat:", patientsResult.error);
+        setError(prev => prev ? `${prev} Failed to load patients.` : "Failed to load patients.");
       }
+
+      if (nursesResult.data) {
+        const nurseContactsMapped: Contact[] = nursesResult.data.map(n => ({
+          id: n.id,
+          name: n.name,
+          email: n.email,
+          role: 'nurse',
+          avatarUrl: n.avatar || `https://placehold.co/40x40.png`,
+          lastMessage: "Click to start a conversation...", // Mock
+          unread: Math.floor(Math.random() * 3), // Mock
+          online: Math.random() > 0.5, // Mock
+          hint: n.hint || 'nurse medical',
+        }));
+        combinedContacts = [...combinedContacts, ...nurseContactsMapped];
+      } else {
+         console.warn("[ChatPage] Failed to load nurses for chat:", nursesResult.error);
+         setError(prev => prev ? `${prev} Failed to load nurses.` : "Failed to load nurses.");
+      }
+      
+      setContacts(combinedContacts);
+      console.log("[ChatPage] Combined contacts from patients & nurses collections:", combinedContacts);
+
+      if (combinedContacts.length > 0) {
+        let defaultContact: Contact | undefined;
+        if (userRole === 'patient') {
+          defaultContact = combinedContacts.find(c => c.role === 'nurse' && c.id !== currentUser?.uid);
+        } else { // admin or nurse
+          defaultContact = combinedContacts.find(c => c.role === 'patient' && c.id !== currentUser?.uid);
+          if (!defaultContact) {
+            defaultContact = combinedContacts.find(c => c.role === 'nurse' && c.id !== currentUser?.uid);
+          }
+        }
+        if (!defaultContact && combinedContacts.length > 0) {
+           defaultContact = combinedContacts[0]?.id !== currentUser?.uid ? combinedContacts[0] : (combinedContacts[1] || null);
+        }
+        setSelectedContact(defaultContact || null);
+        if (defaultContact?.role === 'patient') setSelectedPatientIdFromDropdown(defaultContact.id);
+        if (defaultContact?.role === 'nurse') setSelectedNurseIdFromDropdown(defaultContact.id);
+      }
+
     } catch (e: any) {
       setError(`Failed to load contacts: ${e.message}`);
       console.error("[ChatPage] Exception loading contacts:", e);
@@ -102,43 +133,50 @@ export default function ChatPage() {
     }
   }, [authLoading, loadContacts]);
 
-  const patientContacts = useMemo(() => {
-    console.log("[ChatPage useMemo patientContacts] Full 'contacts' list before filtering for patients:", contacts);
-    console.log("[ChatPage useMemo patientContacts] CurrentUser UID for exclusion:", currentUser?.uid);
+  const patientContactsForDropdown = useMemo(() => {
+    console.log("[ChatPage useMemo patientContactsForDropdown] Full 'contacts' list:", contacts);
     const filtered = contacts.filter(contact => contact.role === 'patient' && contact.id !== currentUser?.uid);
-    console.log("[ChatPage useMemo patientContacts] Derived patientContacts:", filtered);
+    console.log("[ChatPage useMemo patientContactsForDropdown] Derived patientContactsForDropdown:", filtered);
     return filtered;
   }, [contacts, currentUser]);
 
-  const nurseContacts = useMemo(() => {
-    console.log("[ChatPage useMemo nurseContacts] Full 'contacts' list before filtering for nurses:", contacts);
-    console.log("[ChatPage useMemo nurseContacts] CurrentUser UID for exclusion:", currentUser?.uid);
+  const nurseContactsForDropdown = useMemo(() => {
+    console.log("[ChatPage useMemo nurseContactsForDropdown] Full 'contacts' list:", contacts);
     const filtered = contacts.filter(contact => contact.role === 'nurse' && contact.id !== currentUser?.uid);
-    console.log("[ChatPage useMemo nurseContacts] Derived nurseContacts:", filtered);
+    console.log("[ChatPage useMemo nurseContactsForDropdown] Derived nurseContactsForDropdown:", filtered);
     return filtered;
   }, [contacts, currentUser]);
 
-  useEffect(() => {
-    console.log("[ChatPage] Current userRole from useAuth():", userRole);
-  }, [userRole]);
 
-  const handleSelectPatient = (patientId: string) => {
-    const contact = contacts.find(c => c.id === patientId);
+  const handleSelectPatientFromDropdown = (patientId: string) => {
+    const contact = contacts.find(c => c.id === patientId && c.role === 'patient');
     if (contact) {
       setSelectedContact(contact);
       setSelectedPatientIdFromDropdown(patientId);
-      setSelectedNurseIdFromDropdown(""); // Clear other dropdown
+      setSelectedNurseIdFromDropdown(""); 
     }
   };
 
-  const handleSelectNurse = (nurseId: string) => {
-    const contact = contacts.find(c => c.id === nurseId);
+  const handleSelectNurseFromDropdown = (nurseId: string) => {
+    const contact = contacts.find(c => c.id === nurseId && c.role === 'nurse');
     if (contact) {
       setSelectedContact(contact);
       setSelectedNurseIdFromDropdown(nurseId);
-      setSelectedPatientIdFromDropdown(""); // Clear other dropdown
+      setSelectedPatientIdFromDropdown(""); 
     }
   };
+  
+  const handleSelectContactFromList = (contact: Contact) => {
+    setSelectedContact(contact);
+    if (contact.role === 'patient') {
+      setSelectedPatientIdFromDropdown(contact.id);
+      setSelectedNurseIdFromDropdown("");
+    } else if (contact.role === 'nurse') {
+      setSelectedNurseIdFromDropdown(contact.id);
+      setSelectedPatientIdFromDropdown("");
+    }
+  };
+
 
   if (authLoading) {
     return (
@@ -161,33 +199,32 @@ export default function ChatPage() {
 
           <div className="space-y-2 pt-2">
             {(userRole === 'admin' || userRole === 'nurse') && (
-              <Select value={selectedPatientIdFromDropdown} onValueChange={handleSelectPatient}>
+              <Select value={selectedPatientIdFromDropdown} onValueChange={handleSelectPatientFromDropdown}>
                 <SelectTrigger className="w-full">
                   <Users className="mr-2 h-4 w-4 text-muted-foreground" />
                   <SelectValue placeholder="Select a Patient..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {patientContacts.map(p => (
+                  {patientContactsForDropdown.map(p => (
                     <SelectItem key={p.id} value={p.id}>{p.name} (Patient)</SelectItem>
                   ))}
-                   {patientContacts.length === 0 && <div className="p-2 text-sm text-muted-foreground">No patients found.</div>}
+                   {patientContactsForDropdown.length === 0 && <div className="p-2 text-sm text-muted-foreground">No patients found.</div>}
                 </SelectContent>
               </Select>
             )}
-            {(userRole === 'admin' || userRole === 'nurse' || userRole === 'patient') && (
-              <Select value={selectedNurseIdFromDropdown} onValueChange={handleSelectNurse}>
-                <SelectTrigger className="w-full">
-                  <Stethoscope className="mr-2 h-4 w-4 text-muted-foreground" />
-                  <SelectValue placeholder="Select a Nurse..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {nurseContacts.map(n => (
-                    <SelectItem key={n.id} value={n.id}>{n.name} (Nurse)</SelectItem>
-                  ))}
-                   {nurseContacts.length === 0 && <div className="p-2 text-sm text-muted-foreground">No nurses found.</div>}
-                </SelectContent>
-              </Select>
-            )}
+            {/* Nurse dropdown visible to all roles including patient */}
+            <Select value={selectedNurseIdFromDropdown} onValueChange={handleSelectNurseFromDropdown}>
+              <SelectTrigger className="w-full">
+                <Stethoscope className="mr-2 h-4 w-4 text-muted-foreground" />
+                <SelectValue placeholder="Select a Nurse..." />
+              </SelectTrigger>
+              <SelectContent>
+                {nurseContactsForDropdown.map(n => (
+                  <SelectItem key={n.id} value={n.id}>{n.name} (Nurse)</SelectItem>
+                ))}
+                 {nurseContactsForDropdown.length === 0 && <div className="p-2 text-sm text-muted-foreground">No nurses found.</div>}
+              </SelectContent>
+            </Select>
           </div>
 
         </CardHeader>
@@ -201,30 +238,27 @@ export default function ChatPage() {
             {!isLoading && error && (
               <Alert variant="destructive" className="m-3">
                 <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
+                <AlertTitle>Error Loading Contacts</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
             {!isLoading && !error && contacts.length === 0 && (
-              <p className="p-4 text-center text-muted-foreground">No contacts available.</p>
+              <p className="p-4 text-center text-muted-foreground">No patients or nurses available for chat.</p>
             )}
-            {!isLoading && !error && contacts.filter(c => currentUser && c.id !== currentUser.uid && (userRole === 'admin' || userRole === 'nurse' || (userRole === 'patient' && c.role === 'nurse'))).map(contact => (
+            {/* Main contact list - filtered by user role visibility implicitly by combinedContacts logic */}
+            {!isLoading && !error && contacts.filter(c => {
+                if (!currentUser) return false;
+                if (c.id === currentUser.uid) return false; // Exclude self
+                if (userRole === 'patient') return c.role === 'nurse'; // Patients only see nurses
+                return true; // Admins and Nurses see everyone else
+            }).map(contact => (
               <div
                 key={contact.id}
                 className={`flex items-center gap-3 p-3 border-b hover:bg-accent/50 cursor-pointer ${selectedContact?.id === contact.id ? 'bg-accent' : ''}`}
-                onClick={() => {
-                  setSelectedContact(contact);
-                  if (contact.role === 'patient') {
-                    setSelectedPatientIdFromDropdown(contact.id);
-                    setSelectedNurseIdFromDropdown("");
-                  } else if (contact.role === 'nurse') {
-                    setSelectedNurseIdFromDropdown(contact.id);
-                    setSelectedPatientIdFromDropdown("");
-                  }
-                }}
+                onClick={() => handleSelectContactFromList(contact)}
                 role="button"
                 tabIndex={0}
-                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setSelectedContact(contact)}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleSelectContactFromList(contact)}
               >
                 <Avatar className="h-10 w-10 relative">
                   <AvatarImage src={contact.avatarUrl} alt={contact.name} data-ai-hint={contact.hint} />
@@ -232,7 +266,7 @@ export default function ChatPage() {
                   {contact.online && <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />}
                 </Avatar>
                 <div className="flex-1">
-                  <p className="font-semibold text-sm">{contact.name} ({contact.role})</p>
+                  <p className="font-semibold text-sm">{contact.name} <span className="text-xs text-muted-foreground">({contact.role})</span></p>
                   <p className="text-xs text-muted-foreground truncate">{contact.lastMessage}</p>
                 </div>
                 {contact.unread && contact.unread > 0 && (
@@ -260,7 +294,7 @@ export default function ChatPage() {
                 <div>
                   <CardTitle>{selectedContact.name}</CardTitle>
                   <CardDescription className={selectedContact.online ? "text-green-500" : "text-muted-foreground"}>
-                    {selectedContact.online ? "Online" : "Offline"} {selectedContact.role && `(${selectedContact.role})`}
+                    {selectedContact.online ? "Online" : "Offline"} ({selectedContact.role})
                   </CardDescription>
                 </div>
               </div>
@@ -291,15 +325,19 @@ export default function ChatPage() {
       ) : (
         <Card className="flex-1 shadow-lg flex flex-col items-center justify-center bg-muted/30">
             <MessageSquarePlus className="h-16 w-16 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">Select a contact to start chatting.</p>
+            <p className="text-muted-foreground">Select a patient or nurse to start chatting.</p>
             {isLoading && <p className="text-sm text-muted-foreground mt-2">Loading contacts...</p>}
              {!isLoading && !error && contacts.length > 0 && !selectedContact && (
-                <p className="text-sm text-muted-foreground mt-2">Or click on a contact from the list or use the dropdowns above.</p>
+                <p className="text-sm text-muted-foreground mt-2">Use the dropdowns or click on a contact from the list.</p>
+            )}
+            {!isLoading && !error && contacts.length === 0 && (
+                <p className="text-sm text-muted-foreground mt-2">No patients or nurses found in the database to chat with.</p>
             )}
         </Card>
       )}
     </div>
   );
 }
+    
 
     

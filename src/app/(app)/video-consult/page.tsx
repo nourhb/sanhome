@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { fetchVideoConsults, type VideoConsultListItem } from '@/app/actions';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from "@/components/ui/badge";
 import { format, parseISO } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -73,18 +73,18 @@ export default function VideoConsultPage() {
 
   const handleJoinCall = useCallback((urlToJoin?: string) => {
     const targetRoomUrl = urlToJoin || manualRoomUrl;
-    console.log("[VideoConsultPage] Attempting to join Whereby room:", targetRoomUrl); // Added console log
+    console.log("[VideoConsultPage] Attempting to join Whereby room. URL:", targetRoomUrl);
     if (!targetRoomUrl) {
       toast({ variant: 'destructive', title: 'Error', description: 'Room URL is missing.' });
       return;
     }
-    // Basic check for Whereby URL structure - adjust if your subdomain format differs
+    
     if (!targetRoomUrl.includes('.whereby.com/')) {
         toast({ variant: 'destructive', title: 'Invalid URL', description: 'Please enter a valid Whereby room URL (e.g., https://your-subdomain.whereby.com/room-name).' });
         return;
     }
     setCurrentRoomUrl(targetRoomUrl);
-    toast({ title: 'Joining Call', description: `Attempting to join ${targetRoomUrl}`});
+    toast({ title: 'Joining Call', description: `Attempting to join room. Ensure embedding is allowed for this domain in your Whereby settings.`});
   }, [manualRoomUrl, toast]);
 
   const handleLeaveCall = useCallback(() => {
@@ -115,7 +115,7 @@ export default function VideoConsultPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {errorMsg && !isLoadingConsults && ( // Only show general errors if not loading consults
+          {errorMsg && !isLoadingConsults && ( 
             <Alert variant="destructive" className="mb-4">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Error</AlertTitle>
@@ -147,14 +147,22 @@ export default function VideoConsultPage() {
           )}
 
           {currentRoomUrl && (
-            <div className="relative aspect-video bg-muted rounded-lg shadow-inner overflow-hidden border">
-              <iframe
-                src={currentRoomUrl}
-                allow="camera; microphone; fullscreen; speaker; display-capture"
-                className="absolute top-0 left-0 w-full h-full border-0"
-                title="Whereby Video Call"
-              ></iframe>
-            </div>
+            <>
+              <div className="relative aspect-video bg-muted rounded-lg shadow-inner overflow-hidden border">
+                <iframe
+                  src={currentRoomUrl}
+                  allow="camera; microphone; fullscreen; speaker; display-capture"
+                  className="absolute top-0 left-0 w-full h-full border-0"
+                  title="Whereby Video Call"
+                ></iframe>
+              </div>
+              <div className="text-xs text-muted-foreground mt-2">
+                Attempting to embed: <a href={currentRoomUrl} target="_blank" rel="noopener noreferrer" className="underline text-primary">{currentRoomUrl}</a>
+                <br />
+                If you see a "refused to connect" error above, please check your Whereby account settings for the subdomain used in the URL.
+                Ensure embedding is explicitly allowed for your current application domain (e.g., <code>localhost</code> or your deployed app's domain).
+              </div>
+            </>
           )}
 
           {currentRoomUrl && (
@@ -242,18 +250,29 @@ export default function VideoConsultPage() {
 
       <Card className="shadow-lg bg-blue-500/10 border-blue-500/30">
         <CardHeader>
-            <CardTitle className="text-lg flex items-center text-blue-700 dark:text-blue-400">Whereby Integration Notes</CardTitle>
+            <CardTitle className="text-lg flex items-center text-blue-700 dark:text-blue-400">Whereby Integration Notes & Troubleshooting</CardTitle>
         </CardHeader>
         <CardContent>
-            <ul className="list-disc pl-5 space-y-1 text-sm text-blue-600 dark:text-blue-300">
+            <ul className="list-disc pl-5 space-y-2 text-sm text-blue-600 dark:text-blue-300">
                 <li>This page uses Whereby for video calls via an iframe embed.</li>
-                <li>Scheduled consults generate a unique Whereby room URL using your configured subdomain.</li>
-                <li>Ensure `NEXT_PUBLIC_WHEREBY_SUBDOMAIN` in your `.env` file is set to your actual Whereby subdomain (e.g., "your-company-name").</li>
-                <li>**Important:** If the iframe shows "refused to connect", check your Whereby account settings. You may need to allow embedding for your domain (e.g., localhost, or your deployed app's domain).</li>
-                <li>Whereby rooms need to exist or be creatable on-the-fly under your subdomain according to your Whereby plan.</li>
+                <li>Your Whereby subdomain is set via <code>NEXT_PUBLIC_WHEREBY_SUBDOMAIN</code> in your <code>.env</code> file (currently configured as 'sanhome').</li>
+                <li>The Whereby API key (<code>WHEREBY_API_KEY</code> in <code>.env</code>) is used to create new meeting rooms when you schedule a consult.</li>
+                <li><strong>IMPORTANT "Refused to connect" Error:</strong> If the iframe shows "sanhome.whereby.com refused to connect" or a similar error:
+                    <ul className="list-decimal pl-6 mt-1">
+                        <li>Go to your Whereby account dashboard for the <code>sanhome</code> subdomain.</li>
+                        <li>Find the settings for **embedding** or **allowed domains**.</li>
+                        <li>You **MUST** add your application's current domain to the list of allowed embed origins.
+                            For local development, this is typically <code>http://localhost:9002</code> (or your specific port). For deployed apps, it's your production domain.
+                        </li>
+                        <li>If the domain is not whitelisted by Whereby, the iframe embed will be blocked by Whereby's security policies.</li>
+                    </ul>
+                </li>
+                <li>Ensure your Whereby plan supports API room creation and embedding.</li>
             </ul>
         </CardContent>
     </Card>
     </div>
   );
 }
+
+ 

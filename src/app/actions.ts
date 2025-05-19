@@ -1,4 +1,3 @@
-
 'use server';
 // IMPORTANT REMINDER FOR SEEDING:
 // If your Firestore rules are `allow read, write: if request.auth != null;`,
@@ -8,10 +7,14 @@
 // This applies to both Firestore writes and Firebase Authentication user creation.
 // Ensure Firebase Auth "Email/Password" sign-in provider is ENABLED.
 // Ensure the Cloud Firestore API is ENABLED in your Google Cloud project.
-// For the Whereby API integration in scheduleVideoConsult:
+
+// For Whereby API integration in scheduleVideoConsult:
 // Ensure WHEREBY_API_KEY and NEXT_PUBLIC_WHEREBY_SUBDOMAIN are correctly set in your .env file.
 // The API key needs permissions to create rooms.
 // Check your Whereby account settings for embedding permissions if the iframe doesn't load.
+// For email notifications:
+// Ensure EMAIL_USER and EMAIL_PASS are correctly set in .env.
+// For Gmail, use an App Password if 2-Step Verification is ON.
 
 import {
   getPersonalizedCareSuggestions,
@@ -20,7 +23,7 @@ import {
 } from '@/ai/flows/personalized-care-suggestions';
 import { z } from 'zod';
 import { generateRandomPassword, generateRandomString, generatePhoneNumber, generateDateOfBirth } from '@/lib/utils';
-import { auth as clientAuth, db as clientDb } from '@/lib/firebase'; // db and storage are re-enabled
+import { auth as clientAuth, db as clientDb } from '@/lib/firebase';
 import {
   collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp,
   query, where, updateDoc, deleteDoc, writeBatch, getCountFromServer, orderBy, limit, setDoc, collectionGroup
@@ -34,6 +37,7 @@ import { v2 as cloudinary } from 'cloudinary';
 // Consistent instances for Firestore and Auth
 const firestoreInstance = clientDb;
 const firebaseAuthInstance = clientAuth;
+console.log("[ACTION_LOG_INIT] firestoreInstance and firebaseAuthInstance aliased.");
 
 
 if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
@@ -110,7 +114,7 @@ export type PatientListItem = {
   name: string;
   age: number;
   avatarUrl: string;
-  joinDate: string;
+  joinDate: string; // ISO string
   primaryNurse: string;
   phone: string;
   email: string;
@@ -118,13 +122,13 @@ export type PatientListItem = {
   mobilityStatus: string;
   pathologies: string[];
   allergies: string[];
-  lastVisit: string;
+  lastVisit: string; // ISO string
   condition: string;
   status: string;
   hint?: string;
   currentMedications?: Array<{ name: string; dosage: string }>;
   recentVitals?: { date: string; bp: string; hr: string; temp: string; glucose: string };
-  createdAt?: string;
+  createdAt?: string; // ISO string
 };
 
 export async function fetchPatientById(id: string): Promise<{ data?: PatientListItem, error?: string }> {
@@ -147,8 +151,7 @@ export async function fetchPatientById(id: string): Promise<{ data?: PatientList
       console.log("[ACTION_LOG] fetchPatientById: Document exists. Mapping data.");
       const pathologiesArray = Array.isArray(data.pathologies) ? data.pathologies : (typeof data.pathologies === 'string' ? data.pathologies.split(',').map(p => p.trim()) : []);
       const allergiesArray = Array.isArray(data.allergies) ? data.allergies : (typeof data.allergies === 'string' ? data.allergies.split(',').map(a => a.trim()) : []);
-      const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString());
-
+      
       const patientData = {
         id: patientDoc.id,
         name: data.name || "N/A",
@@ -173,7 +176,7 @@ export async function fetchPatientById(id: string): Promise<{ data?: PatientList
         recentVitals: data.recentVitals || {
             date: "2024-07-30", bp: "140/90 mmHg", hr: "75 bpm", temp: "37.0°C", glucose: "120 mg/dL"
         },
-        createdAt: createdAt,
+        createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString()),
       } as PatientListItem;
       console.log("[ACTION_LOG] fetchPatientById: Data mapping complete. Returning data.");
       return { data: patientData };
@@ -274,7 +277,7 @@ export type NurseListItem = {
   avatar: string;
   status: 'Available' | 'On Duty' | 'Unavailable' | string;
   hint?: string;
-  createdAt?: string;
+  createdAt?: string; // ISO string
 };
 
 const AddNurseInputSchema = z.object({
@@ -596,20 +599,25 @@ export type VideoConsultListItem = {
   patientName: string;
   nurseId: string;
   nurseName: string;
-  consultationTime: string;
+  consultationTime: string; // ISO string
   roomUrl: string;
   status: 'scheduled' | 'completed' | 'cancelled';
-  createdAt: string;
+  createdAt: string; // ISO string
 };
 
-// Remember to set WHEREBY_API_KEY in your .env for API room creation.
-// NEXT_PUBLIC_WHEREBY_SUBDOMAIN also needed for URL construction.
 export async function scheduleVideoConsult(
   values: ScheduleVideoConsultFormServerValues
 ): Promise<{ success?: boolean; message: string; consultId?: string; roomUrl?: string }> {
   console.log('[ACTION_LOG] scheduleVideoConsult function called');
   console.log("[ACTION_LOG] scheduleVideoConsult: Received consultationDateTime value:", values.consultationDateTime);
   console.log("[ACTION_LOG] scheduleVideoConsult: Initiated with values:", values.patientId, values.nurseId);
+
+  // Ensure EMAIL_USER and EMAIL_PASS are set before proceeding
+  // For example: console.log(`Email User from env: ${process.env.EMAIL_USER}`);
+
+  // Ensure Whereby API key is set correctly for Whereby integration
+  // For example: console.log(`Whereby API Key from env: ${process.env.WHEREBY_API_KEY ? 'SET' : 'NOT SET'}`);
+
   try {
     if (!firestoreInstance) {
       console.error("[ACTION_ERROR] scheduleVideoConsult: Firestore instance is not available.");
@@ -653,12 +661,13 @@ export async function scheduleVideoConsult(
     if (wherebyApiKey && wherebySubdomain && wherebyApiKey !== "YOUR_WHEREBY_API_KEY_PLACEHOLDER" && wherebySubdomain !== "your-subdomain") {
       console.log(`[ACTION_LOG] scheduleVideoConsult: Attempting to create Whereby room via API. Subdomain: ${wherebySubdomain}`);
 
+      // Simplified API Request Body: removed roomMode and templateType
       const apiRequestBody = {
         endDate: new Date(validatedValues.consultationDateTime.getTime() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours duration
         fields: ['roomUrl', 'hostRoomUrl'],
-        roomNamePattern: 'uuid', // Let Whereby generate a unique name
-        roomMode: 'group', // Or 'normal' if 'group' is problematic
-        templateType: 'viewerMode', // Changed from 'meeting'
+        roomNamePattern: 'uuid',
+        // roomMode: 'group', // Removed
+        // templateType: 'viewerMode', // Removed
       };
       console.log("[ACTION_LOG] scheduleVideoConsult: Whereby API Request Body:", JSON.stringify(apiRequestBody, null, 2));
 
@@ -672,33 +681,33 @@ export async function scheduleVideoConsult(
           body: JSON.stringify(apiRequestBody),
         });
 
-        const responseText = await response.text();
+        const responseText = await response.text(); // Get raw text first
         console.log("[ACTION_LOG] scheduleVideoConsult: Whereby API Raw Response Status:", response.status);
         console.log("[ACTION_LOG] scheduleVideoConsult: Whereby API Raw Response Text:", responseText);
 
         if (!response.ok) {
-          let errorData;
+          let errorDataMessage = `Whereby API error (${response.status})`;
           try {
-            errorData = JSON.parse(responseText);
+            const errorData = JSON.parse(responseText);
+            errorDataMessage += `: ${errorData.message || errorData.error || errorData.detail || responseText}`;
           } catch (parseError) {
-            console.error("[ACTION_ERROR] scheduleVideoConsult: Failed to parse Whereby error response as JSON:", parseError);
-            errorData = { message: `Whereby API error (${response.status}) - Non-JSON response: ${responseText}` };
+            errorDataMessage += ` - Non-JSON response: ${responseText}`;
           }
-          console.error("[ACTION_ERROR] scheduleVideoConsult: Whereby API call failed with status", response.status, "Data:", errorData);
-          throw new Error(`Whereby API error (${response.status}): ${errorData.message || errorData.error || errorData.detail || responseText}`);
+          console.error("[ACTION_ERROR] scheduleVideoConsult: Whereby API call failed. ", errorDataMessage);
+          throw new Error(errorDataMessage);
         }
 
         const meetingData = JSON.parse(responseText);
-        wherebyRoomUrl = meetingData.roomUrl || meetingData.hostRoomUrl;
+        wherebyRoomUrl = meetingData.roomUrl || meetingData.hostRoomUrl; // Prefer roomUrl, fallback to hostRoomUrl
         if (!wherebyRoomUrl) {
             console.error("[ACTION_ERROR] scheduleVideoConsult: Whereby API response missing roomUrl/hostRoomUrl:", meetingData);
-            throw new Error("Whereby API did not return a room URL. Full response: " + JSON.stringify(meetingData));
+            throw new Error("Whereby API did not return a usable room URL. Full response: " + JSON.stringify(meetingData));
         }
         console.log("[ACTION_LOG] scheduleVideoConsult: Whereby room created via API. URL:", wherebyRoomUrl);
+
       } catch (apiError: any) {
         console.error("[ACTION_ERROR] scheduleVideoConsult: Critical error calling Whereby API:", apiError.message, apiError.stack);
-        // Do not fall back here; propagate the error so the user knows room creation failed.
-        return { success: false, message: `Failed to create Whereby room via API: ${apiError.message}. Please check server logs for details.` };
+        return { success: false, message: `Failed to create Whereby room via API: ${apiError.message}. Please check server logs and Whereby API key/permissions.` };
       }
     } else {
         let warningMessage = "[ACTION_WARN] scheduleVideoConsult: Whereby API Key or Subdomain not configured properly for API room creation. ";
@@ -712,7 +721,7 @@ export async function scheduleVideoConsult(
         console.warn(warningMessage);
 
         const roomName = `sanhome-consult-${generateRandomString(8)}`;
-        wherebyRoomUrl = `https://${wherebySubdomain || 'your-subdomain'}.whereby.com/${roomName}`; // Ensure subdomain is used if available
+        wherebyRoomUrl = `https://${wherebySubdomain || 'sanhome'}.whereby.com/${roomName}`;
         console.log("[ACTION_LOG] scheduleVideoConsult: Generated Whereby room URL (fallback):", wherebyRoomUrl);
 
         if (!wherebySubdomain || wherebySubdomain === "your-subdomain") {
@@ -923,15 +932,15 @@ function checkFirebaseInstances() {
     console.error("[ACTION_ERROR] Firebase Auth instance (auth) is not initialized.");
     return false;
   }
-  console.log("[ACTION_LOG] seedDatabase: Firebase db object initialized?", !!firestoreInstance);
-  console.log("[ACTION_LOG] seedDatabase: Firebase auth object initialized?", !!firebaseAuthInstance);
+  console.log("[ACTION_LOG] seedDatabase: Firebase firestoreInstance object initialized?", !!firestoreInstance);
+  console.log("[ACTION_LOG] seedDatabase: Firebase firebaseAuthInstance object initialized?", !!firebaseAuthInstance);
   return true;
 }
 
 export async function seedDatabase(): Promise<{ success: boolean; message: string; details?: Record<string, string> }> {
   console.log("[ACTION_LOG] seedDatabase: Action invoked.");
-  console.log("[ACTION_LOG] seedDatabase: Firebase db object initialized?", !!firestoreInstance);
-  console.log("[ACTION_LOG] seedDatabase: Firebase auth object initialized?", !!firebaseAuthInstance);
+  console.log("[ACTION_LOG] seedDatabase: Firebase firestoreInstance object initialized?", !!firestoreInstance);
+  console.log("[ACTION_LOG] seedDatabase: Firebase firebaseAuthInstance object initialized?", !!firebaseAuthInstance);
 
   const results: Record<string, string> = { users: "", patients: "", nurses: "", videoConsults: "" };
   let allSuccess = true;
@@ -953,6 +962,7 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     try {
       const usersCollRef = collection(firestoreInstance, "users");
       console.log("[ACTION_LOG] seedDatabase: Getting count from 'users' server...");
+      console.log("[ACTION_LOG] seedDatabase: Making sure firestoreInstance is available before getCountFromServer:", !!firestoreInstance);
       const usersCountSnapshot = await getCountFromServer(usersCollRef);
       usersCount = usersCountSnapshot.data().count;
       console.log(`[ACTION_LOG] seedDatabase: Found ${usersCount} existing user documents. Actual count from getCountFromServer: ${usersCount}.`);
@@ -962,14 +972,13 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
       console.error(`[ACTION_ERROR] seedDatabase (checking users collection): ${specificError}`, e);
       results.users += `Error checking 'users' collection: ${specificError}. `;
       allSuccess = false;
-      // Return early if the very first check fails, as it indicates a fundamental issue.
       return { success: false, message: `Database seeding failed: Could not check 'users' collection. ${specificError}`, details: results };
     }
 
     if (usersCount === 0) {
       console.log("[ACTION_LOG] seedDatabase: 'users' collection is empty. Attempting to seed users...");
       const sampleAuthUsers = Array.from({ length: 10 }, (_, index) => ({
-        email: `user${index + 1}-${generateRandomString(4)}@sanhome.com`,
+        email: `user${index + 1}-${generateRandomString(4)}@sanhome.com`, // More unique emails
         password: "Password123!",
         firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
         lastName: lastNames[Math.floor(Math.random() * lastNames.length)],
@@ -1020,12 +1029,13 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
                 console.warn(`[ACTION_WARN] Seed User: ${errorMsg}`);
               } else if (e.code) {
                 console.error(`[ACTION_ERROR] seedDatabase (user ${userData.email}): Code: ${e.code}, Message: ${e.message}`, e);
-                allSuccess = false;
+                userSeedingErrors += errorMsg; // Still add to errors if it's not just 'email-already-in-use' that we silently skip
+                allSuccess = false; // Mark as not fully successful if any non-skip error occurs
               } else {
                  console.error(`[ACTION_ERROR] seedDatabase (user ${userData.email}): Generic JS error: ${e.message}`, e);
+                 userSeedingErrors += errorMsg;
                  allSuccess = false;
               }
-              userSeedingErrors += errorMsg;
             }
           }
         }
@@ -1289,10 +1299,11 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     console.error(`[ACTION_ERROR] seedDatabase: CRITICAL error during seeding process. Code: ${firebaseErrorCode}, Message: ${firebaseErrorMessage}`, error);
     console.error("[ACTION_ERROR] Full error object:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
 
-    if (firebaseErrorCode === 'auth/email-already-in-use') {
-        specificMessage = "Database seeding failed: One or more user emails already exist in Firebase Authentication. Clear existing test users or use different emails.";
+    if (error.code === 'auth/invalid-credential') {
+        // This specific check might be too general here as it's a global catch
+        // Specific auth errors are handled within the user seeding loop
     } else if (firebaseErrorCode === 'permission-denied' || firebaseErrorMessage.includes('PERMISSION_DENIED') || firebaseErrorMessage.includes("Missing or insufficient permissions")) {
-        specificMessage = `Database seeding failed: Missing or insufficient permissions. Ensure Firestore/Auth rules allow writes for authenticated users and that you are logged in when triggering this. Also check project API enablement. Firebase Code: ${firebaseErrorCode}`;
+        specificMessage = `Database seeding failed: Missing or insufficient permissions. Ensure Firestore/Auth rules allow writes for authenticated users (or are temporarily open for seeding: 'allow read, write: if true;') and that you are logged in when triggering this. Also check project API enablement. Firebase Code: ${firebaseErrorCode}`;
     } else if (firebaseAuthInstance && (firebaseErrorMessage.includes("auth is not a function") || firebaseErrorMessage.includes("auth is not defined") || firebaseErrorMessage.includes("auth is null") || firebaseErrorMessage.includes("Firebase: Error (auth/internal-error)."))) {
         specificMessage = "Database seeding failed: Firebase Authentication service might not be initialized correctly or available. Check Firebase setup in `lib/firebase.ts`. Firebase Message: " + firebaseErrorMessage;
     } else if (!firestoreInstance || !firebaseAuthInstance) {
@@ -1308,12 +1319,15 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
     } else if (firebaseErrorCode === 'auth/operation-not-allowed') {
       specificMessage = `Database seeding failed: Email/password sign-in is not enabled for your Firebase project. Please enable it in the Firebase console (Authentication -> Sign-in method).`;
     } else if (firebaseErrorCode === 'auth/invalid-credential') {
-       specificMessage = `Database seeding failed during user creation: Invalid credential. This can happen if the email is malformed or password doesn't meet Firebase requirements (though 'Password123!' should be fine). Check the specific email being processed. Error: ${firebaseErrorMessage}`;
+       specificMessage = `Database seeding failed during user creation: Invalid credential. This can happen if the email is malformed or password doesn't meet Firebase requirements. Check the specific email being processed. Error: ${firebaseErrorMessage}`;
     } else if (specificMessage.includes("firestoreInstance is not defined")) {
       specificMessage = "CRITICAL SETUP ERROR: The Firestore 'db' instance is not correctly initialized or imported in actions.ts. Check lib/firebase.ts and imports.";
     } else if (specificMessage.includes("Failed to get count for 'users' collection")) {
        specificMessage = `Database seeding failed: ${firebaseErrorMessage}. Please check server logs for the specific Firebase error code.`;
+    } else if (error.message && error.message.includes("Cannot read properties of undefined (reading 'data')")) {
+        specificMessage = "Database seeding failed: Likely tried to read 'data' from an undefined snapshot. This might occur if a getCountFromServer or getDocs call failed silently or returned unexpected results. Check Firestore rules and API status.";
     }
+
 
     return { success: false, message: specificMessage, details: results };
   }
@@ -1329,7 +1343,6 @@ export async function fetchPatients(): Promise<{ data?: PatientListItem[], error
     }
     const patientsCollectionRef = collection(firestoreInstance, "patients");
 
-    // const q = query(patientsCollectionRef); // Simplified query
     const q = query(patientsCollectionRef, orderBy("createdAt", "desc"));
     console.log("[ACTION_LOG] fetchPatients: Created collection reference. Attempting getDocs...");
 
@@ -1485,11 +1498,11 @@ export type AppointmentListItem = {
   patientName: string;
   nurseId: string;
   nurseName: string;
-  appointmentDate: string;
+  appointmentDate: string; // ISO string
   appointmentTime: string;
   appointmentType: string;
   status: 'Scheduled' | 'Completed' | 'Cancelled';
-  createdAt: string;
+  createdAt: string; // ISO string
 };
 
 export async function fetchAppointments(): Promise<{ data?: AppointmentListItem[]; error?: string }> {
@@ -1589,18 +1602,18 @@ export type CareLogItem = {
   id: string;
   patientId: string;
   patientName: string;
-  careDate: string;
+  careDate: string; // ISO string
   careType: string;
   notes: string;
   loggedBy: string;
-  createdAt: string;
+  createdAt: string; // ISO string
 };
 
 const AddCareLogInputSchema = z.object({
   patientId: z.string().min(1, "Patient is required."),
   careType: z.string().min(1, "Type of care is required."),
   careDateTime: z.date(),
-  notes: z.string().min(3, "Notes are required."), // Notes are expected
+  notes: z.string().min(3, "Notes are required."),
 });
 export type AddCareLogFormValues = z.infer<typeof AddCareLogInputSchema>;
 
@@ -1622,14 +1635,14 @@ export async function fetchCareLogs(patientId?: string): Promise<{ data?: CareLo
     const snapshot = await getDocs(q);
     const logs = snapshot.docs.map(docSnap => {
         const data = docSnap.data();
-        const notes = data.notes || "No notes provided."; // Ensure notes field is handled
+        const notes = data.notes || "No notes provided.";
         return {
             id: docSnap.id,
             patientId: data.patientId,
             patientName: data.patientName || "N/A",
             careDate: data.careDate instanceof Timestamp ? data.careDate.toDate().toISOString() : new Date().toISOString(),
             careType: data.careType,
-            notes: notes,
+            notes: notes, // Ensure notes are correctly assigned
             loggedBy: data.loggedBy,
             createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
         } as CareLogItem
@@ -1645,8 +1658,6 @@ export async function fetchCareLogs(patientId?: string): Promise<{ data?: CareLo
   }
 }
 
-// The `addCareLog` function saves notes to the database.
-// The `newCareLogData` object includes the `notes` field.
 export async function addCareLog(values: AddCareLogFormValues, loggedByName: string): Promise<{ success?: boolean; message: string; logId?: string }> {
   console.log("[ACTION_LOG] addCareLog: Initiated with values:", values);
   try {
@@ -1660,12 +1671,13 @@ export async function addCareLog(values: AddCareLogFormValues, loggedByName: str
     const patientDoc = await getDoc(doc(firestoreInstance, "patients", validatedValues.patientId));
     if (patientDoc.exists()) patientName = patientDoc.data().name;
 
+    // This is where 'notes' field is prepared for Firestore.
     const newCareLogData = {
       patientId: validatedValues.patientId,
       patientName,
       careDate: Timestamp.fromDate(validatedValues.careDateTime),
       careType: validatedValues.careType,
-      notes: validatedValues.notes, // This line ensures notes are saved
+      notes: validatedValues.notes, // Notes are definitely part of the object being saved.
       loggedBy: loggedByName,
       createdAt: serverTimestamp(),
     };
@@ -1686,8 +1698,6 @@ export async function addCareLog(values: AddCareLogFormValues, loggedByName: str
 const UpdateCareLogInputSchema = AddCareLogInputSchema;
 export type UpdateCareLogFormValues = AddCareLogFormValues;
 
-// The `updateCareLog` function also saves notes to the database.
-// The `updatedCareLogData` object includes the `notes` field.
 export async function updateCareLog(logId: string, values: UpdateCareLogFormValues): Promise<{ success?: boolean; message: string }> {
   console.log(`[ACTION_LOG] updateCareLog: Initiated for log ID: ${logId} with values:`, values);
   try {
@@ -1709,12 +1719,14 @@ export async function updateCareLog(logId: string, values: UpdateCareLogFormValu
     }
 
     const careLogRef = doc(firestoreInstance, "careLogs", logId);
+    // This is where 'notes' field is prepared for Firestore update.
     const updatedCareLogData = {
       patientId: validatedValues.patientId,
       patientName,
       careType: validatedValues.careType,
       careDate: Timestamp.fromDate(validatedValues.careDateTime),
-      notes: validatedValues.notes, // This line ensures notes are updated
+      notes: validatedValues.notes, // Notes are definitely part of the object being updated.
+      // loggedBy and createdAt are usually not updated.
     };
 
     await updateDoc(careLogRef, updatedCareLogData);
@@ -1760,11 +1772,11 @@ export type MedicalFileItem = {
   fileName: string;
   fileType: string;
   fileUrl: string;
-  uploadDate: string;
+  uploadDate: string; // ISO string
   uploaderId: string;
   uploaderName: string;
   size: number;
-  createdAt: string;
+  createdAt: string; // ISO string
 };
 
 export async function fetchMedicalFiles(patientId?: string): Promise<{ data?: MedicalFileItem[]; error?: string }> {
@@ -1815,12 +1827,12 @@ export async function fetchMedicalFiles(patientId?: string): Promise<{ data?: Me
 
 export async function uploadMedicalFile(
   patientId: string,
-  fileNameUnused: string,
-  fileTypeUnused: string,
-  fileSizeUnused: number,
+  fileNameUnused: string, // Original parameters kept for signature compatibility, but 'file' obj used
+  fileTypeUnused: string, // Original parameters kept
+  fileSizeUnused: number, // Original parameters kept
   uploaderId: string,
   uploaderName: string,
-  file: File
+  file: File // The actual file object
 ): Promise<{ success?: boolean; message: string; fileId?: string; fileUrl?: string }> {
   console.log(`[ACTION_LOG] uploadMedicalFile: Uploading for patient ${patientId}, file ${file.name}, uploader ${uploaderName} (${uploaderId})`);
   if (!firestoreInstance) {
@@ -1878,7 +1890,7 @@ export type NotificationItem = {
   message: string;
   read: boolean;
   link?: string;
-  createdAt: string;
+  createdAt: string; // ISO string
 };
 
 export async function fetchNotifications(userId: string): Promise<{ data?: NotificationItem[]; error?: string }> {
@@ -1964,8 +1976,8 @@ export type UserForAdminList = {
     name: string;
     role: string | null;
     status: 'Active' | 'Suspended' | string;
-    joined: string;
-    createdAt: string;
+    joined: string; // ISO string
+    createdAt: string; // ISO string
 };
 
 export async function fetchUsersForAdmin(): Promise<{ data?: UserForAdminList[]; error?: string }> {
@@ -1989,7 +2001,7 @@ export async function fetchUsersForAdmin(): Promise<{ data?: UserForAdminList[];
             } else if (data.lastName) {
               name = data.lastName;
             } else if (data.email) {
-              name = data.email;
+              name = data.email; // Fallback name to email
             } else {
               name = "Unknown User";
             }
@@ -1998,8 +2010,8 @@ export async function fetchUsersForAdmin(): Promise<{ data?: UserForAdminList[];
                 id: docSnap.id,
                 email: data.email || null,
                 name: name,
-                role: data.role || 'patient', // Default role for chat contact list consistency
-                status: 'Active',
+                role: data.role || 'patient',
+                status: 'Active', // Default status
                 joined: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
                 createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
             } as UserForAdminList;

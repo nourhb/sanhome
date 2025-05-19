@@ -43,19 +43,23 @@ export default function MedicalFilesPage() {
         setIsLoadingPatients(false);
         return;
       }
-      if (authLoading) return; // Wait for auth to finish loading
+      if (authLoading) return; 
 
+      console.log("[MedicalFilesPage] Loading patients for dropdown...");
       setIsLoadingPatients(true);
-      setError(null); // Clear previous errors
+      setError(null); 
       try {
         const patientsResult = await fetchPatients();
         if (patientsResult.data) {
           setPatients(patientsResult.data);
+          console.log("[MedicalFilesPage] Patients loaded for dropdown:", patientsResult.data.length);
         } else {
           setError(prev => `${prev ? prev + " " : ""}Failed to load patients: ${patientsResult.error || 'Unknown error'}`);
+          console.error("[MedicalFilesPage] Error loading patients:", patientsResult.error);
         }
       } catch (e: any) {
         setError(`Failed to load patient list: ${e.message}`);
+        console.error("[MedicalFilesPage] Exception loading patients:", e);
       } finally {
         setIsLoadingPatients(false);
       }
@@ -67,21 +71,25 @@ export default function MedicalFilesPage() {
   useEffect(() => {
     async function loadMedicalFilesForPatient() {
       if (!currentUser || !selectedPatientId) {
-        setFiles([]); // Clear files if no patient is selected
+        setFiles([]); 
         return;
       }
       setIsLoadingFiles(true);
-      setError(null); // Clear previous errors specific to file loading
+      // setError(null); // Clear only file-specific errors, not patient loading errors
       try {
+        console.log(`[MedicalFilesPage] useEffect fetching files for patient: ${selectedPatientId}`);
         const filesResult = await fetchMedicalFiles(selectedPatientId);
         if (filesResult.data) {
+          console.log("[MedicalFilesPage] useEffect successfully fetched files:", filesResult.data.length, filesResult.data);
           setFiles(filesResult.data);
         } else {
           setError(prev => `${prev ? prev + " " : ""}Failed to load medical files for selected patient: ${filesResult.error || 'Unknown error'}`);
+          console.error("[MedicalFilesPage] Error loading medical files for patient:", selectedPatientId, filesResult.error);
           setFiles([]);
         }
       } catch (e: any) {
         setError(`Failed to load medical files: ${e.message}`);
+        console.error("[MedicalFilesPage] Exception loading medical files for patient:", selectedPatientId, e);
         setFiles([]);
       } finally {
         setIsLoadingFiles(false);
@@ -113,6 +121,7 @@ export default function MedicalFilesPage() {
     if (file) {
       setIsUploading(true);
       toast({ title: "Uploading file...", description: file.name });
+      console.log(`[MedicalFilesPage] handleFileSelected: Uploading "${file.name}" for patient ${selectedPatientId}`);
       const result = await uploadMedicalFile(
         selectedPatientId,
         file.name,
@@ -124,13 +133,24 @@ export default function MedicalFilesPage() {
       );
       if (result.success) {
         toast({ title: "File Uploaded", description: result.message });
+        console.log(`[MedicalFilesPage] File upload successful for patient ${selectedPatientId}. File ID: ${result.fileId}`);
         // Re-fetch files for the currently selected patient
         if (selectedPatientId) {
+            console.log(`[MedicalFilesPage] Re-fetching files for patient: ${selectedPatientId} after upload.`);
+            setIsLoadingFiles(true); // Show loading indicator for re-fetch
             const filesResult = await fetchMedicalFiles(selectedPatientId);
-            if (filesResult.data) setFiles(filesResult.data);
+            if (filesResult.data) {
+                console.log("[MedicalFilesPage] Successfully re-fetched files after upload:", filesResult.data.length, filesResult.data);
+                setFiles(filesResult.data);
+            } else {
+                console.error("[MedicalFilesPage] Error re-fetching files after upload:", filesResult.error);
+                toast({ variant: "destructive", title: "Update Failed", description: "Could not refresh file list: " + (filesResult.error || "Unknown error") });
+            }
+            setIsLoadingFiles(false);
         }
       } else {
         toast({ variant: "destructive", title: "Upload Failed", description: result.message });
+        console.error(`[MedicalFilesPage] File upload failed for patient ${selectedPatientId}:`, result.message);
       }
       setIsUploading(false);
       if(fileInputRef.current) fileInputRef.current.value = "";
@@ -151,14 +171,13 @@ export default function MedicalFilesPage() {
 
     try {
       const patientResult = await fetchPatientById(selectedPatientId);
-      // Files for the selected patient are already in the 'files' state
-      // const filesResult = await fetchMedicalFiles(selectedPatientId); // Not needed if 'files' state is up-to-date
-
+      
       if (!patientResult.data) {
         throw new Error(patientResult.error || "Failed to fetch patient details for PDF.");
       }
       const patient = patientResult.data;
-      const patientFilesToReport = files; // Use the current 'files' state which should be for the selected patient
+      // Files for the selected patient are already in the 'files' state, filtered by selectedPatientId
+      const patientFilesToReport = files; 
 
       const doc = new jsPDF();
       let yPos = 20;
@@ -205,7 +224,7 @@ export default function MedicalFilesPage() {
 
       doc.setFontSize(11);
       doc.setFont("helvetica", "normal");
-      const addInfoLine = (label: string, value: string) => {
+      const addInfoLine = (label: string, value: string | undefined) => {
         doc.setFont("helvetica", "bold");
         doc.text(`${label}:`, margin, yPos);
         doc.setFont("helvetica", "normal");
@@ -322,7 +341,7 @@ export default function MedicalFilesPage() {
         <p className="text-muted-foreground">Access, upload, and manage patient medical history, conditions, medications, and visit logs.</p>
       </div>
 
-      {error && (isLoadingPatients || isLoadingFiles) && ( // Show general error if data is still loading
+      {error && !isLoadingPatients && !isLoadingFiles && ( 
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
@@ -373,17 +392,17 @@ export default function MedicalFilesPage() {
                 <input type="file" ref={fileInputRef} onChange={handleFileSelected} className="hidden" />
             </div>
 
-            {isLoadingFiles && (
+            {isLoadingFiles && selectedPatientId && (
               <div className="flex items-center justify-center p-8"><Loader2 className="mr-2 h-6 w-6 animate-spin" /> Loading files for selected patient...</div>
             )}
-            {!isLoadingFiles && error && selectedPatientId && ( // Show file-specific error only if a patient is selected
+            {!isLoadingFiles && error && selectedPatientId && ( 
                  <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertTitle>Error Loading Files</AlertTitle>
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
             )}
-            {!isLoadingFiles && !error && !selectedPatientId && (
+            {!selectedPatientId && !isLoadingPatients && (
                  <div className="p-8 text-center text-muted-foreground border rounded-lg">
                     <User className="mx-auto h-12 w-12 mb-2 opacity-50" />
                     <p>Please select a patient to view their medical files.</p>

@@ -1,8 +1,8 @@
 
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore"; // Re-enabled
-import { getStorage, type FirebaseStorage } from "firebase/storage"; // Re-enabled
+import { getFirestore, type Firestore } from "firebase/firestore";
+// import { getStorage, type FirebaseStorage } from "firebase/storage"; // Firebase Storage no longer used
 
 // Your web app's Firebase configuration
 // IMPORTANT: Replace with your actual Firebase project configuration.
@@ -11,7 +11,7 @@ const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET, // Still needed by Firebase config, even if not actively used for app uploads
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
@@ -25,8 +25,7 @@ if (!getApps().length) {
 }
 
 const auth: Auth = getAuth(app);
-const db: Firestore = getFirestore(app); // Re-enabled
-const storage: FirebaseStorage = getStorage(app); // Re-enabled
+const db: Firestore = getFirestore(app);
+// const storage: FirebaseStorage = getStorage(app); // Firebase Storage no longer used for app uploads
 
-export { app, auth, db, storage }; // Re-added db and storage to exports
-
+export { app, auth, db }; // Removed storage from exports

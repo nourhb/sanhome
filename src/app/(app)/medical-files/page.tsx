@@ -12,7 +12,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import 'jspdf-autotable'; // Import for side effects
 import { jsPDF } from 'jspdf'; // Default import
 import { useAuth } from "@/contexts/auth-context";
-import type { MedicalFileItem, PatientListItem } from "@/app/actions"; // Renamed to PatientListItem
+import type { MedicalFileItem, PatientListItem } from "@/app/actions";
 import { fetchMedicalFiles, uploadMedicalFile, fetchPatients, fetchPatientById } from "@/app/actions";
 import { format, parseISO, isValid } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -22,56 +22,75 @@ const fileTypesForFilter = ["All", "Lab Result", "Imaging Report", "Visit Summar
 
 export default function MedicalFilesPage() {
   const [files, setFiles] = useState<MedicalFileItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { currentUser, loading: authLoading } = useAuth();
   const { toast } = useToast();
 
   const [patients, setPatients] = useState<PatientListItem[]>([]);
-  const [selectedPatientId, setSelectedPatientId] = useState<string>(""); // Initialize as empty string
+  const [selectedPatientId, setSelectedPatientId] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFilterType, setSelectedFilterType] = useState<string>("All");
 
-
-  const loadInitialData = useCallback(async () => {
-    if (!currentUser) {
-      setError("Please log in to manage medical files.");
-      setIsLoading(false);
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    try {
-      const [patientsResult, filesResult] = await Promise.all([
-        fetchPatients(),
-        fetchMedicalFiles(selectedPatientId || undefined) // Fetch files for selected patient or all if none selected
-      ]);
-
-      if (patientsResult.data) {
-        setPatients(patientsResult.data);
-      } else {
-        setError(prev => `${prev ? prev + " " : ""}Failed to load patients: ${patientsResult.error || 'Unknown error'}`);
+  // Effect to load patients for the dropdown
+  useEffect(() => {
+    async function loadPatientsForDropdown() {
+      if (!currentUser && !authLoading) {
+        setError("Please log in to manage medical files.");
+        setIsLoadingPatients(false);
+        return;
       }
+      if (authLoading) return; // Wait for auth to finish loading
 
-      if (filesResult.data) {
-        setFiles(filesResult.data);
-      } else {
-        setError(prev => `${prev ? prev + " " : ""}Failed to load medical files: ${filesResult.error || 'Unknown error'}`);
+      setIsLoadingPatients(true);
+      setError(null); // Clear previous errors
+      try {
+        const patientsResult = await fetchPatients();
+        if (patientsResult.data) {
+          setPatients(patientsResult.data);
+        } else {
+          setError(prev => `${prev ? prev + " " : ""}Failed to load patients: ${patientsResult.error || 'Unknown error'}`);
+        }
+      } catch (e: any) {
+        setError(`Failed to load patient list: ${e.message}`);
+      } finally {
+        setIsLoadingPatients(false);
       }
-    } catch (e: any) {
-      setError(`Failed to load data: ${e.message}`);
-    } finally {
-      setIsLoading(false);
     }
+    loadPatientsForDropdown();
+  }, [currentUser, authLoading]);
+
+  // Effect to load medical files when selectedPatientId changes
+  useEffect(() => {
+    async function loadMedicalFilesForPatient() {
+      if (!currentUser || !selectedPatientId) {
+        setFiles([]); // Clear files if no patient is selected
+        return;
+      }
+      setIsLoadingFiles(true);
+      setError(null); // Clear previous errors specific to file loading
+      try {
+        const filesResult = await fetchMedicalFiles(selectedPatientId);
+        if (filesResult.data) {
+          setFiles(filesResult.data);
+        } else {
+          setError(prev => `${prev ? prev + " " : ""}Failed to load medical files for selected patient: ${filesResult.error || 'Unknown error'}`);
+          setFiles([]);
+        }
+      } catch (e: any) {
+        setError(`Failed to load medical files: ${e.message}`);
+        setFiles([]);
+      } finally {
+        setIsLoadingFiles(false);
+      }
+    }
+
+    loadMedicalFilesForPatient();
   }, [currentUser, selectedPatientId]);
 
-  useEffect(() => {
-    if (!authLoading) {
-      loadInitialData();
-    }
-  }, [authLoading, loadInitialData]);
 
   const handleFileUploadClick = () => {
     if (!selectedPatientId) {
@@ -86,7 +105,7 @@ export default function MedicalFilesPage() {
       toast({ variant: "destructive", title: "Not Authenticated" });
       return;
     }
-    if (!selectedPatientId) { // Should be caught by handleFileUploadClick, but double-check
+    if (!selectedPatientId) {
       toast({ variant: "destructive", title: "Please select a patient" });
       return;
     }
@@ -95,28 +114,30 @@ export default function MedicalFilesPage() {
       setIsUploading(true);
       toast({ title: "Uploading file...", description: file.name });
       const result = await uploadMedicalFile(
-        selectedPatientId, 
-        file.name, 
-        file.type, 
-        file.size, 
-        currentUser.uid, 
+        selectedPatientId,
+        file.name,
+        file.type,
+        file.size,
+        currentUser.uid,
         currentUser.displayName || currentUser.email || "Unknown uploader",
-        file // Pass the File object itself
+        file
       );
       if (result.success) {
         toast({ title: "File Uploaded", description: result.message });
-        loadInitialData(); // Refresh file list
+        // Re-fetch files for the currently selected patient
+        if (selectedPatientId) {
+            const filesResult = await fetchMedicalFiles(selectedPatientId);
+            if (filesResult.data) setFiles(filesResult.data);
+        }
       } else {
         toast({ variant: "destructive", title: "Upload Failed", description: result.message });
       }
       setIsUploading(false);
-      if(fileInputRef.current) fileInputRef.current.value = ""; 
+      if(fileInputRef.current) fileInputRef.current.value = "";
     }
   };
-  
-  const filteredFiles = files.filter(file => 
-    selectedPatientId ? file.patientId === selectedPatientId : true // Show only selected patient's files if one is selected
-  ).filter(file =>
+
+  const filteredFilesByType = files.filter(file =>
     selectedFilterType === "All" || file.fileType.toLowerCase().includes(selectedFilterType.toLowerCase())
   );
 
@@ -130,13 +151,14 @@ export default function MedicalFilesPage() {
 
     try {
       const patientResult = await fetchPatientById(selectedPatientId);
-      const filesResult = await fetchMedicalFiles(selectedPatientId);
+      // Files for the selected patient are already in the 'files' state
+      // const filesResult = await fetchMedicalFiles(selectedPatientId); // Not needed if 'files' state is up-to-date
 
       if (!patientResult.data) {
         throw new Error(patientResult.error || "Failed to fetch patient details for PDF.");
       }
       const patient = patientResult.data;
-      const patientFiles = filesResult.data || [];
+      const patientFilesToReport = files; // Use the current 'files' state which should be for the selected patient
 
       const doc = new jsPDF();
       let yPos = 20;
@@ -152,8 +174,7 @@ export default function MedicalFilesPage() {
           yPos = margin;
         }
       };
-      
-      // Header
+
       doc.setFontSize(20);
       doc.setFont("helvetica", "bold");
       doc.text(`Medical Report`, pageWidth / 2, yPos, { align: 'center' });
@@ -167,19 +188,18 @@ export default function MedicalFilesPage() {
       addPageIfNeeded();
 
       doc.setFontSize(10);
-      doc.setTextColor(100); // Grey color for subtitle
+      doc.setTextColor(100);
       doc.text(`Report Generated On: ${format(new Date(), "PPpp")}`, pageWidth / 2, yPos, { align: 'center' });
       yPos += sectionSpacing * 1.5;
       addPageIfNeeded();
-      doc.setTextColor(0); // Reset text color to black
+      doc.setTextColor(0);
 
-      // Patient Information Section
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
       doc.text("Patient Information", margin, yPos);
       yPos += lineSpacing * 0.5;
       doc.setLineWidth(0.2);
-      doc.line(margin, yPos, pageWidth - margin, yPos); // Underline
+      doc.line(margin, yPos, pageWidth - margin, yPos);
       yPos += lineSpacing * 1.5;
       addPageIfNeeded();
 
@@ -189,7 +209,7 @@ export default function MedicalFilesPage() {
         doc.setFont("helvetica", "bold");
         doc.text(`${label}:`, margin, yPos);
         doc.setFont("helvetica", "normal");
-        doc.text(value || 'N/A', margin + 35, yPos); // Adjust indent as needed
+        doc.text(value || 'N/A', margin + 35, yPos);
         yPos += lineSpacing;
         addPageIfNeeded();
       };
@@ -199,10 +219,9 @@ export default function MedicalFilesPage() {
       addInfoLine("Email", patient.email);
       addInfoLine("Phone", patient.phone);
       addInfoLine("Address", patient.address);
-      yPos += sectionSpacing * 0.5; // Extra space after section
+      yPos += sectionSpacing * 0.5;
       addPageIfNeeded();
 
-      // Medical History Section
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
       doc.text("Medical Summary", margin, yPos);
@@ -217,8 +236,7 @@ export default function MedicalFilesPage() {
       addInfoLine("Allergies", (Array.isArray(patient.allergies) && patient.allergies.length > 0) ? patient.allergies.join(', ') : 'None reported');
       yPos += sectionSpacing * 0.5;
       addPageIfNeeded();
-      
-      // Current Medications Placeholder Section
+
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
       doc.text("Current Medications (Placeholder)", margin, yPos);
@@ -233,9 +251,7 @@ export default function MedicalFilesPage() {
       addPageIfNeeded();
       doc.setFont("helvetica", "normal");
 
-
-      // Medical Files Section
-      addPageIfNeeded(patientFiles.length * 8 + 30); // Estimate space for table + header
+      addPageIfNeeded(patientFilesToReport.length * 8 + 30);
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
       doc.text("Medical Files", margin, yPos);
@@ -244,9 +260,9 @@ export default function MedicalFilesPage() {
       yPos += lineSpacing * 1.5;
       addPageIfNeeded();
 
-      if (patientFiles.length > 0) {
+      if (patientFilesToReport.length > 0) {
         const tableColumn = ["File Name", "Type", "Date Uploaded", "Size (MB)"];
-        const tableRows = patientFiles.map(file => [
+        const tableRows = patientFilesToReport.map(file => [
           file.fileName || "N/A",
           file.fileType || "N/A",
           isValid(parseISO(file.uploadDate)) ? format(parseISO(file.uploadDate), "PP") : file.uploadDate,
@@ -256,13 +272,13 @@ export default function MedicalFilesPage() {
           head: [tableColumn],
           body: tableRows,
           startY: yPos,
-          theme: 'grid', // 'striped', 'grid', 'plain'
+          theme: 'grid',
           headStyles: { fillColor: [220, 220, 220], textColor: [0,0,0], fontSize: 10, fontStyle: 'bold' },
           bodyStyles: { fontSize: 9 },
           alternateRowStyles: { fillColor: [245, 245, 245] },
           margin: { left: margin, right: margin },
           didDrawPage: (data: any) => {
-            yPos = data.cursor.y + 10; 
+            yPos = data.cursor.y + 10;
           }
         });
       } else {
@@ -270,8 +286,7 @@ export default function MedicalFilesPage() {
         doc.text("No medical files found for this patient.", margin, yPos);
         yPos += lineSpacing;
       }
-      
-      // Footer (simple page number)
+
       const pageCount = (doc as any).internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -279,7 +294,6 @@ export default function MedicalFilesPage() {
         doc.setTextColor(150);
         doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 10, pageHeight - 10, {align: 'right'});
       }
-
 
       doc.save(`medical_report_${(patient.name || 'patient').replace(/\s/g, '_')}_${patient.id}.pdf`);
       toast({ title: "PDF Generated", description: "Report downloaded successfully." });
@@ -291,7 +305,7 @@ export default function MedicalFilesPage() {
       setIsGeneratingPdf(false);
     }
   };
-  
+
   if (authLoading) {
      return (
       <div className="flex items-center justify-center h-64">
@@ -301,7 +315,6 @@ export default function MedicalFilesPage() {
     );
   }
 
-
   return (
     <div className="space-y-6">
       <div>
@@ -309,7 +322,7 @@ export default function MedicalFilesPage() {
         <p className="text-muted-foreground">Access, upload, and manage patient medical history, conditions, medications, and visit logs.</p>
       </div>
 
-      {error && !isLoading && (
+      {error && (isLoadingPatients || isLoadingFiles) && ( // Show general error if data is still loading
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
@@ -326,10 +339,10 @@ export default function MedicalFilesPage() {
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 p-4 border rounded-lg bg-card">
                 <div className="flex-grow space-y-2 md:space-y-0 md:flex md:gap-2 w-full">
-                     <Select onValueChange={setSelectedPatientId} value={selectedPatientId} disabled={patients.length === 0 || isLoading}>
+                     <Select onValueChange={setSelectedPatientId} value={selectedPatientId} disabled={patients.length === 0 || isLoadingPatients}>
                         <SelectTrigger className="w-full md:w-auto md:min-w-[200px]">
                             <User className="mr-2 h-4 w-4 text-muted-foreground" />
-                            <SelectValue placeholder={patients.length === 0 ? "No patients loaded" : "Select a patient..."} />
+                            <SelectValue placeholder={isLoadingPatients ? "Loading patients..." : (patients.length === 0 ? "No patients available" : "Select a patient...")} />
                         </SelectTrigger>
                         <SelectContent>
                             {patients.map((patient) => (
@@ -337,7 +350,7 @@ export default function MedicalFilesPage() {
                             ))}
                         </SelectContent>
                     </Select>
-                     <Select onValueChange={setSelectedFilterType} defaultValue="All" disabled={isLoading}>
+                     <Select onValueChange={setSelectedFilterType} defaultValue="All" disabled={isLoadingFiles || !selectedPatientId}>
                         <SelectTrigger className="w-full md:w-auto md:min-w-[180px]">
                             <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
                             <SelectValue placeholder="Filter by type..." />
@@ -348,36 +361,49 @@ export default function MedicalFilesPage() {
                     </Select>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
-                    <Button className="w-full sm:w-auto" onClick={handleFileUploadClick} disabled={isUploading || isLoading || !selectedPatientId}>
+                    <Button className="w-full sm:w-auto" onClick={handleFileUploadClick} disabled={isUploading || isLoadingFiles || isLoadingPatients || !selectedPatientId}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                         Upload File
                     </Button>
-                    <Button className="w-full sm:w-auto" onClick={generatePdfReport} disabled={isGeneratingPdf || isLoading || !selectedPatientId}>
+                    <Button className="w-full sm:w-auto" onClick={generatePdfReport} disabled={isGeneratingPdf || isLoadingFiles || isLoadingPatients || !selectedPatientId || files.length === 0}>
                         {isGeneratingPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                         Generate PDF
                     </Button>
                 </div>
                 <input type="file" ref={fileInputRef} onChange={handleFileSelected} className="hidden" />
             </div>
-            
-            {isLoading && (
-              <div className="flex items-center justify-center p-8"><Loader2 className="mr-2 h-6 w-6 animate-spin" /> Loading files...</div>
+
+            {isLoadingFiles && (
+              <div className="flex items-center justify-center p-8"><Loader2 className="mr-2 h-6 w-6 animate-spin" /> Loading files for selected patient...</div>
             )}
-            {!isLoading && !error && filteredFiles.length === 0 && (
+            {!isLoadingFiles && error && selectedPatientId && ( // Show file-specific error only if a patient is selected
+                 <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Error Loading Files</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+            )}
+            {!isLoadingFiles && !error && !selectedPatientId && (
+                 <div className="p-8 text-center text-muted-foreground border rounded-lg">
+                    <User className="mx-auto h-12 w-12 mb-2 opacity-50" />
+                    <p>Please select a patient to view their medical files.</p>
+                </div>
+            )}
+            {!isLoadingFiles && !error && selectedPatientId && filteredFilesByType.length === 0 && (
                <div className="border rounded-lg overflow-hidden">
                 <Table>
                   <TableHeader><TableRow><TableHead>File Name</TableHead><TableHead className="hidden md:table-cell">Patient</TableHead><TableHead>Type</TableHead><TableHead className="hidden sm:table-cell">Date</TableHead><TableHead className="hidden lg:table-cell">Size</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                   <TableBody>
                     <TableRow>
                       <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                        {selectedPatientId ? "No medical files found for the selected patient or filter." : "Select a patient to view their files, or no files found."}
+                        No medical files found for the selected patient or filter.
                       </TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
                </div>
             )}
-            {!isLoading && !error && filteredFiles.length > 0 && (
+            {!isLoadingFiles && !error && selectedPatientId && filteredFilesByType.length > 0 && (
               <div className="border rounded-lg overflow-hidden">
                 <Table>
                   <TableHeader>
@@ -391,7 +417,7 @@ export default function MedicalFilesPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredFiles.map(file => (
+                    {filteredFilesByType.map(file => (
                       <TableRow key={file.id} className="hover:bg-muted/50">
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
@@ -418,7 +444,7 @@ export default function MedicalFilesPage() {
               </div>
             )}
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 pt-6 border-t">
             <Card className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
@@ -453,4 +479,3 @@ export default function MedicalFilesPage() {
     </div>
   );
 }
-

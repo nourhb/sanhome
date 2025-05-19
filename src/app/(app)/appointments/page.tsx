@@ -65,9 +65,11 @@ export default function AppointmentsPage() {
         setAppointments(result.data);
       } else {
         setError(result.error || "Failed to load appointments.");
+        setAppointments([]); // Ensure appointments is empty on error
       }
     } catch (e: any) {
       setError(e.message || "An unexpected error occurred.");
+      setAppointments([]); // Ensure appointments is empty on exception
     } finally {
       setIsLoading(false);
     }
@@ -111,11 +113,11 @@ export default function AppointmentsPage() {
     selected: selectedDate, 
   };
 
-  if (authLoading || isLoading) {
+  if (authLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
-        <p>Loading appointments...</p>
+        <p>Authenticating...</p>
       </div>
     );
   }
@@ -134,14 +136,6 @@ export default function AppointmentsPage() {
         </Button>
       </div>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <Card className="shadow-lg">
@@ -150,7 +144,28 @@ export default function AppointmentsPage() {
               <CardDescription>A log of all scheduled and completed appointments.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {appointments.map(appt => (
+              {isLoading && (
+                <div className="flex items-center justify-center p-8">
+                  <Loader2 className="mr-2 h-6 w-6 animate-spin text-primary" /> Loading appointments...
+                </div>
+              )}
+              {!isLoading && error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Error Loading Appointments</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              {!isLoading && !error && appointments.length === 0 && (
+                <div className="p-8 text-center bg-muted rounded-md">
+                    <CalendarIconLucide className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="text-xl font-semibold mb-2">No Appointments</h3>
+                    <p className="text-muted-foreground">
+                    There are no upcoming or past appointments. Use the button above to schedule one.
+                    </p>
+                </div>
+              )}
+              {!isLoading && !error && appointments.map(appt => (
                 <Card key={appt.id} className="hover:shadow-md transition-shadow">
                   <CardHeader className="pb-2">
                     <div className="flex justify-between items-start">
@@ -173,19 +188,12 @@ export default function AppointmentsPage() {
                       <CalendarIconLucide className="h-4 w-4" /> {format(parseISO(appt.appointmentDate), "PPP")}
                       <Clock className="h-4 w-4 ml-2" /> {appt.appointmentTime}
                     </div>
-                    <Button variant="outline" size="sm">Details</Button>
+                    <Button variant="outline" size="sm" asChild>
+                        <Link href={`/appointments/${appt.id}`}>Details</Link>
+                    </Button>
                   </CardContent>
                 </Card>
               ))}
-               {appointments.length === 0 && !isLoading && !error && (
-                <div className="p-8 text-center bg-muted rounded-md">
-                    <CalendarIconLucide className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                    <h3 className="text-xl font-semibold mb-2">No Appointments</h3>
-                    <p className="text-muted-foreground">
-                    There are no upcoming or past appointments. Use the button above to schedule one.
-                    </p>
-                </div>
-               )}
             </CardContent>
           </Card>
         </div>

@@ -73,12 +73,14 @@ export default function VideoConsultPage() {
 
   const handleJoinCall = useCallback((urlToJoin?: string) => {
     const targetRoomUrl = urlToJoin || manualRoomUrl;
+    console.log("[VideoConsultPage] Attempting to join Whereby room:", targetRoomUrl); // Added console log
     if (!targetRoomUrl) {
       toast({ variant: 'destructive', title: 'Error', description: 'Room URL is missing.' });
       return;
     }
+    // Basic check for Whereby URL structure - adjust if your subdomain format differs
     if (!targetRoomUrl.includes('.whereby.com/')) {
-        toast({ variant: 'destructive', title: 'Invalid URL', description: 'Please enter a valid Whereby room URL.' });
+        toast({ variant: 'destructive', title: 'Invalid URL', description: 'Please enter a valid Whereby room URL (e.g., https://your-subdomain.whereby.com/room-name).' });
         return;
     }
     setCurrentRoomUrl(targetRoomUrl);
@@ -113,7 +115,7 @@ export default function VideoConsultPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {errorMsg && (
+          {errorMsg && !isLoadingConsults && ( // Only show general errors if not loading consults
             <Alert variant="destructive" className="mb-4">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Error</AlertTitle>
@@ -145,7 +147,7 @@ export default function VideoConsultPage() {
           )}
 
           {currentRoomUrl && (
-            <div className="relative aspect-video bg-muted rounded-lg shadow-inner overflow-hidden">
+            <div className="relative aspect-video bg-muted rounded-lg shadow-inner overflow-hidden border">
               <iframe
                 src={currentRoomUrl}
                 allow="camera; microphone; fullscreen; speaker; display-capture"
@@ -161,7 +163,7 @@ export default function VideoConsultPage() {
               variant="destructive"
               className="w-full mt-4 max-w-md"
             >
-              <XCircle className="mr-2 h-4 w-4" /> {/* Changed icon to XCircle for closing */}
+              <XCircle className="mr-2 h-4 w-4" />
               Close Call Window
             </Button>
           )}
@@ -176,7 +178,7 @@ export default function VideoConsultPage() {
               <RefreshCw className={`h-4 w-4 ${isLoadingConsults ? 'animate-spin' : ''}`} />
             </Button>
           </div>
-          <CardDescription>Upcoming and past video calls. Ensure your Whereby subdomain is correctly set in environment variables.</CardDescription>
+          <CardDescription>Upcoming and past video calls. Your Whereby subdomain should be set in environment variables. Check Whereby account settings for embedding permissions if calls fail to connect.</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingConsults && (
@@ -244,10 +246,11 @@ export default function VideoConsultPage() {
         </CardHeader>
         <CardContent>
             <ul className="list-disc pl-5 space-y-1 text-sm text-blue-600 dark:text-blue-300">
-                <li>This page now uses Whereby for video calls via an iframe embed.</li>
-                <li>Scheduled consults generate a unique Whereby room URL using your subdomain.</li>
-                <li>Ensure `NEXT_PUBLIC_WHEREBY_SUBDOMAIN` in your `.env` file is set to your actual Whereby subdomain (e.g., "your-company-name" if your rooms are at your-company-name.whereby.com).</li>
-                <li>Whereby rooms need to exist or be creatable on-the-fly under your subdomain.</li>
+                <li>This page uses Whereby for video calls via an iframe embed.</li>
+                <li>Scheduled consults generate a unique Whereby room URL using your configured subdomain.</li>
+                <li>Ensure `NEXT_PUBLIC_WHEREBY_SUBDOMAIN` in your `.env` file is set to your actual Whereby subdomain (e.g., "your-company-name").</li>
+                <li>**Important:** If the iframe shows "refused to connect", check your Whereby account settings. You may need to allow embedding for your domain (e.g., localhost, or your deployed app's domain).</li>
+                <li>Whereby rooms need to exist or be creatable on-the-fly under your subdomain according to your Whereby plan.</li>
             </ul>
         </CardContent>
     </Card>

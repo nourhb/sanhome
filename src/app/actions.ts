@@ -24,7 +24,7 @@ import {
 } from '@/ai/flows/personalized-care-suggestions';
 import { z } from 'zod';
 import { generateRandomPassword, generateRandomString, generatePhoneNumber, generateDateOfBirth } from '@/lib/utils';
-import { auth as clientAuth, db as clientDb } from '@/lib/firebase'; 
+import { auth as clientAuth, db as clientDb } from '@/lib/firebase';
 import {
   collection, addDoc, getDocs, doc, getDoc, serverTimestamp, Timestamp,
   query, where, updateDoc, deleteDoc, writeBatch, getCountFromServer, orderBy, limit, setDoc, collectionGroup
@@ -34,11 +34,10 @@ import nodemailer from 'nodemailer';
 import { format } from 'date-fns';
 import { v2 as cloudinary } from 'cloudinary';
 
-
 // Consistent instances for Firestore and Auth
 const firestoreInstance = clientDb;
 const firebaseAuthInstance = clientAuth;
-console.log("[ACTION_LOG_INIT] firestoreInstance and firebaseAuthInstance aliased.");
+console.log("[ACTION_LOG_INIT] firestoreInstance and firebaseAuthInstance aliased in actions.ts.");
 
 
 if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
@@ -609,23 +608,22 @@ export type VideoConsultListItem = {
 export async function scheduleVideoConsult(
   values: ScheduleVideoConsultFormServerValues
 ): Promise<{ success?: boolean; message: string; consultId?: string; roomUrl?: string }> {
-  // CRITICAL: Ensure WHEREBY_API_KEY and NEXT_PUBLIC_WHEREBY_SUBDOMAIN are correctly set in .env for this to work.
-  // If not set, this function will return an error and not proceed with scheduling.
-  // Also ensure NEXT_PUBLIC_WHEREBY_SUBDOMAIN is set.
+  // Reminder: If using Gmail for EMAIL_USER, an App Password is often required if 2-Step Verification is ON.
+  // Check .env for EMAIL_USER and EMAIL_PASS.
   const wherebyApiKey = process.env.WHEREBY_API_KEY;
   const wherebySubdomain = process.env.NEXT_PUBLIC_WHEREBY_SUBDOMAIN;
 
-  console.log('[ACTION_LOG] scheduleVideoConsult function called');
-  console.log(`[ACTION_LOG] scheduleVideoConsult: Using WHEREBY_API_KEY: ${wherebyApiKey ? 'SET (value hidden)' : 'NOT SET'}`);
-  console.log(`[ACTION_LOG] scheduleVideoConsult: Using NEXT_PUBLIC_WHEREBY_SUBDOMAIN: ${wherebySubdomain || 'NOT SET'}`);
+  console.log('[ACTION_LOG] scheduleVideoConsult function called.');
+  console.log(`[ACTION_LOG] scheduleVideoConsult: Using WHEREBY_API_KEY: ${wherebyApiKey ? 'SET (value hidden)' : 'NOT SET or placeholder'}`);
+  console.log(`[ACTION_LOG] scheduleVideoConsult: Using NEXT_PUBLIC_WHEREBY_SUBDOMAIN: ${wherebySubdomain || 'NOT SET or placeholder'}`);
 
   if (!wherebyApiKey || wherebyApiKey === "YOUR_WHEREBY_API_KEY_PLACEHOLDER" || !wherebyApiKey.trim()) {
     const errorMsg = "WHEREBY_API_KEY is not configured in environment variables. Cannot create video consult room via API. Please set it in your .env file.";
     console.error(`[ACTION_ERROR] scheduleVideoConsult: ${errorMsg}`);
     return { success: false, message: errorMsg };
   }
-  if (!wherebySubdomain || wherebySubdomain === "your-subdomain-from-env-or-default" || !wherebySubdomain.trim()) {
-    const errorMsg = "NEXT_PUBLIC_WHEREBY_SUBDOMAIN is not configured in environment variables. Cannot create video consult room. Please set it in your .env file.";
+  if (!wherebySubdomain || wherebySubdomain === "your-subdomain-from-env-or-default" || !wherebySubdomain.trim() || wherebySubdomain === "sanhome") { // Added check for default "sanhome"
+    const errorMsg = `NEXT_PUBLIC_WHEREBY_SUBDOMAIN is not configured correctly (currently "${wherebySubdomain}"). Please set your actual Whereby subdomain in your .env file.`;
     console.error(`[ACTION_ERROR] scheduleVideoConsult: ${errorMsg}`);
     return { success: false, message: errorMsg };
   }
@@ -665,16 +663,14 @@ export async function scheduleVideoConsult(
     const patient = patientDocSnap.data() as Omit<PatientListItem, 'id'>;
     const nurse = nurseDocSnap.data() as Omit<NurseListItem, 'id'>;
 
-    console.log("[ACTION_LOG] scheduleVideoConsult: Using consultationDateTime for scheduling:", validatedValues.consultationDateTime);
-
     let wherebyRoomUrl = "";
 
     console.log(`[ACTION_LOG] scheduleVideoConsult: Attempting to create Whereby room via API. Subdomain: ${wherebySubdomain}`);
     const apiRequestBody = {
       endDate: new Date(validatedValues.consultationDateTime.getTime() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours duration
-      fields: ['roomUrl', 'hostRoomUrl'], // Request roomUrl and hostRoomUrl
-      roomNamePattern: 'uuid', // Let Whereby generate a unique room name segment
-      // Removed roomMode and templateType based on previous errors
+      fields: ['roomUrl', 'hostRoomUrl'],
+      roomNamePattern: 'uuid',
+      // templateType and roomMode removed for simplicity, API defaults will be used.
     };
     console.log("[ACTION_LOG] scheduleVideoConsult: Whereby API Request Body:", JSON.stringify(apiRequestBody, null, 2));
 
@@ -687,24 +683,23 @@ export async function scheduleVideoConsult(
       body: JSON.stringify(apiRequestBody),
     });
 
-    const responseText = await response.text(); // Get raw response text first for logging
+    const responseText = await response.text();
     console.log("[ACTION_LOG] scheduleVideoConsult: Whereby API Raw Response Status:", response.status);
     console.log("[ACTION_LOG] scheduleVideoConsult: Whereby API Raw Response Text:", responseText);
 
     if (!response.ok) {
       let errorDataMessage = `Whereby API error (${response.status})`;
       try {
-        const errorData = JSON.parse(responseText); // Try to parse as JSON
+        const errorData = JSON.parse(responseText);
         errorDataMessage += `: ${errorData.message || errorData.error || errorData.detail || JSON.stringify(errorData) || responseText}`;
       } catch (parseError) {
-        // If parsing fails, use the raw text
         errorDataMessage += ` - Non-JSON response: ${responseText}`;
       }
       console.error("[ACTION_ERROR] scheduleVideoConsult: Whereby API call failed. ", errorDataMessage);
-      throw new Error(errorDataMessage); // Propagate a clear error
+      throw new Error(errorDataMessage);
     }
 
-    const meetingData = JSON.parse(responseText); // Parse now that we know it's likely JSON
+    const meetingData = JSON.parse(responseText);
     wherebyRoomUrl = meetingData.roomUrl || meetingData.hostRoomUrl; 
 
     if (!wherebyRoomUrl) {
@@ -777,7 +772,7 @@ export async function scheduleVideoConsult(
     };
 
   } catch (error: any) {
-    console.error("[ACTION_ERROR] scheduleVideoConsult: Critical error calling Whereby API or saving to Firestore: ", error.message, error);
+    console.error("[ACTION_ERROR] scheduleVideoConsult: Critical error: ", error.message, error);
     if (error instanceof z.ZodError) {
       return { success: false, message: `Validation failed: ${error.errors.map(e => e.message).join(', ')}` };
     }
@@ -1187,11 +1182,11 @@ const mockTunisianNurses = [
 
 function checkFirebaseInstances() {
   if (!firestoreInstance) {
-    console.error("[ACTION_ERROR] Firestore instance (db) is not initialized.");
+    console.error("[ACTION_ERROR] seedDatabase: Firestore instance (db) is not initialized.");
     return false;
   }
   if (!firebaseAuthInstance) {
-    console.error("[ACTION_ERROR] Firebase Auth instance (auth) is not initialized.");
+    console.error("[ACTION_ERROR] seedDatabase: Firebase Auth instance (auth) is not initialized.");
     return false;
   }
   console.log("[ACTION_LOG] seedDatabase: Firebase firestoreInstance object initialized?", !!firestoreInstance);
@@ -1511,9 +1506,9 @@ export async function seedDatabase(): Promise<{ success: boolean; message: strin
             const statuses: VideoConsultListItem['status'][] = ['scheduled', 'completed', 'cancelled'];
             const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
 
-            const wherebySubdomain = process.env.NEXT_PUBLIC_WHEREBY_SUBDOMAIN || "sanhome";
+            const wherebySubdomain = process.env.NEXT_PUBLIC_WHEREBY_SUBDOMAIN || "sanhome"; // Ensure this is correctly set
             const roomName = `sanhome-consult-${generateRandomString(8)}`;
-            const roomUrl = `https://${wherebySubdomain}.whereby.com/${roomName}`; // Fallback, actual room creation is via API if key is present
+            const roomUrl = `https://${wherebySubdomain}.whereby.com/${roomName}`; // Basic URL, actual room creation via API is separate
 
             const newConsult = {
               patientId: randomPatient.id,
@@ -1992,7 +1987,7 @@ export async function addCareLog(values: AddCareLogFormValues, loggedByName: str
       patientName, // Stored for convenience
       careDate: Timestamp.fromDate(validatedValues.careDateTime),
       careType: validatedValues.careType,
-      notes: validatedValues.notes, 
+      notes: validatedValues.notes, // Notes are included here
       loggedBy: loggedByName,
       createdAt: serverTimestamp(),
     };
@@ -2076,3 +2071,6 @@ export async function deleteCareLog(logId: string): Promise<{ success: boolean; 
         return { success: false, message: `Failed to delete care log: ${error.message}` };
     }
 }
+
+
+    

@@ -46,6 +46,12 @@ export default function LoginPage() {
     setIsLoading(false);
 
     if (error) {
+      // For auth/network-request-failed:
+      // 1. Check internet connection.
+      // 2. Check for firewalls, VPNs, or proxies blocking Firebase.
+      // 3. If using Firebase Emulators, ensure they are running and accessible.
+      // 4. Verify Firebase project config in .env is correct.
+      // 5. Check Firebase status dashboard for outages.
       toast({
         variant: "destructive",
         title: "Login Failed",

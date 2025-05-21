@@ -47,7 +47,7 @@ export default function LoginPage() {
 
     if (error) {
       // For auth/network-request-failed:
-      // 1. Check internet connection.
+      // 1. Check internet connection (slow connections can cause this).
       // 2. Check for firewalls, VPNs, or proxies blocking Firebase.
       // 3. If using Firebase Emulators, ensure they are running and accessible.
       // 4. Verify Firebase project config in .env is correct.

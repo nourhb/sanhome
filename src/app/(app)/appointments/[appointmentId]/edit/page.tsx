@@ -26,9 +26,7 @@ import { cn } from "@/lib/utils";
 import { Calendar as CalendarIconLucide, Clock, Loader2, Save, AlertCircle, Edit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchPatients, fetchNurses, fetchAppointmentById, type PatientListItem, type NurseListItem, type AddAppointmentFormValues, type AppointmentListItem } from "@/app/actions";
-// TODO: Create updateAppointment server action
-// import { updateAppointment } from "@/app/actions";
+import { fetchPatients, fetchNurses, fetchAppointmentById, updateAppointment, type PatientListItem, type NurseListItem, type AppointmentListItem, type UpdateAppointmentFormValues } from "@/app/actions";
 import { useAuth } from "@/contexts/auth-context";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -41,6 +39,8 @@ const appointmentFormSchema = z.object({
   status: z.enum(['Scheduled', 'Completed', 'Cancelled']),
 });
 
+// This type is for the client-side form values which includes IDs for patient/nurse
+// It directly matches UpdateAppointmentFormValues from actions.ts
 type ClientAppointmentFormValues = z.infer<typeof appointmentFormSchema>;
 
 const appointmentTypes = ["Check-up", "Medication Review", "Wound Care", "Vitals Check", "Consultation"];
@@ -120,17 +120,16 @@ export default function EditAppointmentPage() {
 
   function onSubmit(values: ClientAppointmentFormValues) {
     startTransition(async () => {
-      // TODO: Implement updateAppointment server action
-      console.log("Form values to update appointment:", values, "for ID:", appointmentId);
-      // const result = await updateAppointment(appointmentId, values);
-      const result = { success: false, message: "Update functionality not yet implemented." }; // Placeholder
+      // The server action `updateAppointment` expects UpdateAppointmentFormValues
+      // which is compatible with ClientAppointmentFormValues here.
+      const result = await updateAppointment(appointmentId, values);
       
       if (result.success) {
         toast({
           title: "Appointment Updated",
-          description: `Appointment has been successfully updated.`,
+          description: result.message || `Appointment has been successfully updated.`,
         });
-        router.push(`/appointments/${appointmentId}`);
+        router.push(`/appointments/${appointmentId}`); // Navigate back to the details page
       } else {
          toast({
           variant: "destructive",
@@ -189,7 +188,7 @@ export default function EditAppointmentPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Patient Name</FormLabel>
-                       <Select onValueChange={field.onChange} value={field.value} disabled={patients.length === 0}>
+                       <Select onValueChange={field.onChange} value={field.value} disabled={patients.length === 0 || true /* Patient/Nurse typically not changed in an edit */}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder={patients.length === 0 ? "No patients available" : "Select a patient"} />
@@ -209,7 +208,7 @@ export default function EditAppointmentPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Nurse Name</FormLabel>
-                       <Select onValueChange={field.onChange} value={field.value} disabled={nurses.length === 0}>
+                       <Select onValueChange={field.onChange} value={field.value} disabled={nurses.length === 0 || true /* Patient/Nurse typically not changed in an edit */}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder={nurses.length === 0 ? "No nurses available" : "Select a nurse"} />
@@ -349,3 +348,4 @@ export default function EditAppointmentPage() {
     </div>
   );
 }
+

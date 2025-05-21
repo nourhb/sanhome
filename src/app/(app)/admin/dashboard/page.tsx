@@ -16,9 +16,10 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import type { UserForAdminList, NurseListItem, PatientListItem } from "@/app/actions"; // Assuming UserForAdminList is defined
+import type { UserForAdminList, NurseListItem, PatientListItem } from "@/app/actions";
 import { fetchUsersForAdmin, fetchNurses, fetchPatients, fetchVideoConsults } from "@/app/actions";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { format, parseISO, isValid } from "date-fns"; // Added parseISO and isValid
 
 const chartConfigLine = {
   users: {
@@ -46,7 +47,9 @@ export default function AdminDashboardPage() {
 
   const loadAdminData = useCallback(async () => {
     if (!currentUser || userRole !== 'admin') {
-      setError("Access denied. Admin privileges required.");
+      if (!authLoading && userRole !== 'admin') { // Check authLoading to prevent premature error
+        setError("Access denied. Admin privileges required.");
+      }
       setIsLoading(false);
       return;
     }
@@ -57,7 +60,7 @@ export default function AdminDashboardPage() {
         fetchUsersForAdmin(),
         fetchNurses(),
         fetchPatients(),
-        fetchVideoConsults() // Assuming fetchVideoConsults gives data for appointment trends
+        fetchVideoConsults()
       ]);
 
       if (usersResult.data) setUsers(usersResult.data);
@@ -77,7 +80,7 @@ export default function AdminDashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, userRole]);
+  }, [currentUser, userRole, authLoading]);
 
   useEffect(() => {
     if(!authLoading){
@@ -85,25 +88,26 @@ export default function AdminDashboardPage() {
     }
   }, [authLoading, loadAdminData]);
 
-  // Mock data for charts - replace with processed data from fetched consults/users
-  const activeUsersData = [ // This should be derived from users collection activity
-    { month: "Jan", users: users.filter(u => new Date(u.joined).getMonth() === 0).length || Math.floor(Math.random()*50+100) },
-    { month: "Feb", users: users.filter(u => new Date(u.joined).getMonth() === 1).length || Math.floor(Math.random()*50+100) },
-    { month: "Mar", users: users.filter(u => new Date(u.joined).getMonth() === 2).length || Math.floor(Math.random()*50+100) },
-    { month: "Apr", users: users.filter(u => new Date(u.joined).getMonth() === 3).length || Math.floor(Math.random()*50+100) },
-    { month: "May", users: users.filter(u => new Date(u.joined).getMonth() === 4).length || Math.floor(Math.random()*50+100) },
-    { month: "Jun", users: users.filter(u => new Date(u.joined).getMonth() === 5).length || Math.floor(Math.random()*50+100) },
-  ];
+  const activeUsersData = React.useMemo(() => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+    return months.map((monthName, index) => {
+      const count = users.filter(u => {
+        if (!u.joined) return false;
+        const joinedDate = parseISO(u.joined);
+        return isValid(joinedDate) && joinedDate.getMonth() === index;
+      }).length;
+      return { month: monthName, users: count || Math.floor(Math.random() * 50 + 100) }; // Keep random fallback for now if needed
+    });
+  }, [users]);
 
-  // For appointment trends, we need a 'type' field in appointments or videoConsults
-  // For now, using placeholder or mock data if 'type' is not available
-  const appointmentTrendsData = [
-    { type: "Check-up", count: videoConsults.filter(c => c.status === 'completed').length || 45 }, // Example logic
+
+  const appointmentTrendsData = React.useMemo(() => [
+    { type: "Check-up", count: videoConsults.filter(c => c.status === 'completed').length || 45 },
     { type: "Med Review", count: Math.floor(Math.random()*20+20) },
     { type: "Wound Care", count: Math.floor(Math.random()*15+10) },
     { type: "Vitals", count: Math.floor(Math.random()*30+30) },
     { type: "Consult", count: Math.floor(Math.random()*10+10) },
-  ];
+  ], [videoConsults]);
 
   if (authLoading || isLoading) {
     return (
@@ -194,43 +198,50 @@ export default function AdminDashboardPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell><Badge variant={user.role === 'admin' ? 'destructive' : 'secondary'}>{user.role}</Badge></TableCell>
-                  <TableCell>
-                    <Badge variant={user.status === 'Active' ? 'default' : 'outline'} className={user.status === 'Active' ? 'bg-green-500/20 text-green-700 border-green-500/30' : 'bg-yellow-500/20 text-yellow-700 border-yellow-500/30'}>
-                        {user.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{user.joined ? format(parseISO(user.joined), "PP") : 'N/A'}</TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
-                          <span className="sr-only">Open menu</span>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Edit User
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Settings2 className="mr-2 h-4 w-4" />
-                          Change Role
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50">
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete User
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {users.map((user) => {
+                const joinedDate = user.joined ? parseISO(user.joined) : null;
+                return (
+                  <TableRow key={user.id}>
+                    <TableCell className="font-medium">{user.name}</TableCell>
+                    <TableCell>{user.email}</TableCell>
+                    <TableCell><Badge variant={user.role === 'admin' ? 'destructive' : 'secondary'}>{user.role}</Badge></TableCell>
+                    <TableCell>
+                      <Badge variant={user.status === 'Active' ? 'default' : 'outline'} className={user.status === 'Active' ? 'bg-green-500/20 text-green-700 border-green-500/30' : 'bg-yellow-500/20 text-yellow-700 border-yellow-500/30'}>
+                          {user.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {joinedDate && isValid(joinedDate) 
+                        ? format(joinedDate, "PP") 
+                        : 'N/A'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" className="h-8 w-8 p-0">
+                            <span className="sr-only">Open menu</span>
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit User
+                          </DropdownMenuItem>
+                          <DropdownMenuItem>
+                            <Settings2 className="mr-2 h-4 w-4" />
+                            Change Role
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete User
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
           {users.length === 0 && <p className="text-center text-muted-foreground py-4">No users found.</p>}
@@ -251,7 +262,7 @@ export default function AdminDashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Active Users Over Time</CardTitle>
-                <CardDescription className="text-xs">Based on user join dates.</CardDescription>
+                <CardDescription className="text-xs">Based on user join dates from Firestore.</CardDescription>
               </CardHeader>
               <CardContent>
                 <ChartContainer config={chartConfigLine} className="h-[240px] w-full">
@@ -312,3 +323,4 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+

@@ -4,7 +4,7 @@
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, AlertCircle, CalendarClock, User, Stethoscope, ListChecks } from 'lucide-react';
 import { fetchAppointmentById, type AppointmentListItem } from '@/app/actions';

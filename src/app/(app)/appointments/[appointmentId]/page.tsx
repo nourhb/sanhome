@@ -1,17 +1,19 @@
 
 "use client";
 
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, AlertCircle, CalendarClock, User, Stethoscope, ListChecks } from 'lucide-react';
+import { Loader2, AlertCircle, CalendarClock, User, Stethoscope, ListChecks, Edit } from 'lucide-react';
 import { fetchAppointmentById, type AppointmentListItem } from '@/app/actions';
 import { format, parseISO } from 'date-fns';
+import Link from 'next/link';
 
 export default function AppointmentDetailsPage() {
   const params = useParams();
+  const router = useRouter();
   const appointmentId = params.appointmentId as string;
 
   const [appointment, setAppointment] = useState<AppointmentListItem | null>(null);
@@ -112,8 +114,12 @@ export default function AppointmentDetailsPage() {
           
         </CardContent>
         <CardFooter className="border-t pt-4 flex justify-end space-x-3">
-          {/* TODO: Implement Edit action */}
-          <Button variant="outline">Edit Appointment</Button>
+          <Button variant="outline" asChild>
+            <Link href={`/appointments/${appointment.id}/edit`}>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Appointment
+            </Link>
+          </Button>
           {/* TODO: Implement Delete action */}
           <Button variant="destructive">Delete Appointment</Button>
         </CardFooter>

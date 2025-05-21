@@ -1,84 +1,133 @@
+
 "use client";
 
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Loader2, AlertCircle, CalendarClock, User, Stethoscope, ListChecks } from 'lucide-react';
+import { fetchAppointmentById, type AppointmentListItem } from '@/app/actions';
+import { format, parseISO } from 'date-fns';
 
 export default function AppointmentDetailsPage() {
   const params = useParams();
   const appointmentId = params.appointmentId as string;
 
-  // State to hold appointment details
-  const [appointment, setAppointment] = useState<any>(null);
+  const [appointment, setAppointment] = useState<AppointmentListItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-
   useEffect(() => {
-    async function fetchAppointmentDetails() {
-      if (!appointmentId) return;
+    async function loadAppointmentDetails() {
+      if (!appointmentId) {
+        setError("Appointment ID is missing.");
+        setIsLoading(false);
+        return;
+      }
 
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/appointments/${appointmentId}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch appointment details');
+        const result = await fetchAppointmentById(appointmentId);
+        if (result.data) {
+          setAppointment(result.data);
+        } else {
+          setError(result.error || 'Failed to fetch appointment details.');
         }
-        const data = await response.json();
-        setAppointment(data);
-
-        // // Placeholder data for now - REMOVE AFTER IMPLEMENTING FETCH
-        // setAppointment({
-        //     id: appointmentId,
-            time: "Loading...",
-            type: "Loading...",
-        });
-
       } catch (err: any) {
-        setError(err.message);
+        setError(err.message || 'An unexpected error occurred.');
       } finally {
         setIsLoading(false);
       }
     }
 
-    fetchAppointmentDetails();
+    loadAppointmentDetails();
   }, [appointmentId]);
 
-
   if (isLoading) {
-    return <div>Loading appointment details...</div>;
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
+        <p>Loading appointment details...</p>
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="text-red-500">Error loading appointment details: {error}</div>;
+    return (
+      <div className="container mx-auto py-8">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error Loading Appointment</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
+    );
   }
 
   if (!appointment) {
-    return <div>Appointment not found.</div>;
+    return (
+      <div className="container mx-auto py-8 text-center">
+        <p className="text-muted-foreground">Appointment not found.</p>
+      </div>
+    );
   }
 
-
   return (
-    <div className="container mx-auto py-8">
-      <h1 className="text-2xl font-semibold mb-4">Appointment Details</h1>
-      <p>Appointment ID: {appointmentId}</p>
+    <div className="container mx-auto py-8 space-y-6">
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-2xl font-semibold flex items-center">
+            <CalendarClock className="mr-3 h-7 w-7 text-primary" />
+            Appointment Details
+          </CardTitle>
+          <CardDescription>
+            Viewing details for appointment ID: {appointment.id}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+            <div>
+              <p className="text-muted-foreground flex items-center"><User className="mr-2 h-4 w-4" />Patient:</p>
+              <p className="font-medium text-base">{appointment.patientName}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground flex items-center"><Stethoscope className="mr-2 h-4 w-4" />Nurse:</p>
+              <p className="font-medium text-base">{appointment.nurseName}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground flex items-center"><CalendarClock className="mr-2 h-4 w-4" />Date & Time:</p>
+              <p className="font-medium text-base">{format(parseISO(appointment.appointmentDate), "PPP")} at {appointment.appointmentTime}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground flex items-center"><ListChecks className="mr-2 h-4 w-4" />Type:</p>
+              <p className="font-medium text-base">{appointment.appointmentType}</p>
+            </div>
+             <div>
+              <p className="text-muted-foreground">Status:</p>
+              <p className="font-medium text-base">{appointment.status}</p>
+            </div>
+          </div>
+          
+        </CardContent>
+        <CardFooter className="border-t pt-4 flex justify-end space-x-3">
+          {/* TODO: Implement Edit action */}
+          <Button variant="outline">Edit Appointment</Button>
+          {/* TODO: Implement Delete action */}
+          <Button variant="destructive">Delete Appointment</Button>
+        </CardFooter>
+      </Card>
 
-      {/* Display placeholder appointment details */}
-      <div className="mt-6 space-y-4">
-          <p><strong>Patient:</strong> {appointment.patientName}</p>
-          <p><strong>Nurse:</strong> {appointment.nurseName}</p>
-          <p><strong>Date:</strong> {appointment.date}</p>
-          <p><strong>Time:</strong> {appointment.time}</p>
-          <p><strong>Type:</strong> {appointment.type}</p>
-      </div>
-
-
-      <div className="mt-8 space-x-4">
-        {/* TODO: Implement Edit action */}
-        <button className="px-4 py-2 bg-blue-500 text-white rounded">Edit Appointment</button>
-        {/* TODO: Implement Delete action */}
-        <button className="px-4 py-2 bg-red-500 text-white rounded">Delete Appointment</button>
-      </div>
+       <Card className="shadow-md">
+        <CardHeader>
+          <CardTitle className="text-lg">Notes & Follow-up</CardTitle>
+          <CardDescription>Placeholder for appointment notes and follow-up actions.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">This section would typically display notes entered by the nurse during or after the appointment, and any follow-up tasks or recommendations.</p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

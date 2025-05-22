@@ -3,7 +3,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { db, auth as firebaseAuth } from '@/lib/firebase'; // Use existing firebase instances
+import { db } from '@/lib/firebase'; // Use existing firebase instances
 import {
   doc,
   collection,
@@ -16,9 +16,11 @@ import {
   where,
   deleteDoc,
   writeBatch,
+  deleteField, // Import deleteField
 } from 'firebase/firestore';
 import { Button } from './ui/button';
-import { PhoneOff, Mic, MicOff, Video as VideoIcon, VideoOff } from 'lucide-react';
+import { PhoneOff, Mic, MicOff, Video as VideoIcon, VideoOff, Share2, Loader2 } from 'lucide-react'; // Added Share2
+import { useToast } from '@/hooks/use-toast'; // Added useToast
 
 interface VideoCallProps {
   userId: string; // Current user's Firebase UID
@@ -30,7 +32,6 @@ const servers = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     // You might need TURN servers for more reliable connections across different networks
-    // Example: { urls: 'turn:your-turn-server.com', username: 'user', credential: 'password' }
   ],
   iceCandidatePoolSize: 10,
 };
@@ -45,7 +46,8 @@ const VideoCall: React.FC<VideoCallProps> = ({ userId, roomId, onHangUp }) => {
 
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const [callStatus, setCallStatus] = useState<string>("Connecting...");
+  const [callStatus, setCallStatus] = useState<string>("Initializing...");
+  const { toast } = useToast(); // Initialize useToast
 
   const roomDocRef = doc(db, 'videoCallRooms', roomId);
   const offerCandidatesCollectionRef = collection(db, 'videoCallRooms', roomId, 'offerCandidates');
@@ -59,19 +61,22 @@ const VideoCall: React.FC<VideoCallProps> = ({ userId, roomId, onHangUp }) => {
     console.log("[WebRTC] Creating new RTCPeerConnection");
     pc.current = new RTCPeerConnection(servers);
 
-    pc.current.onicecandidate = (event) => {
+    pc.current.onicecandidate = async (event) => {
       if (event.candidate) {
-        console.log("[WebRTC] Found ICE candidate:", event.candidate);
-        // Determine if this is an offerer or answerer based on existence of offer
-        getDoc(roomDocRef).then(roomSnapshot => {
-          if (roomSnapshot.exists() && roomSnapshot.data()?.offer && !roomSnapshot.data()?.answer) {
-            // This client is likely the offerer or has already sent offer
-            addDoc(offerCandidatesCollectionRef, { ...event.candidate.toJSON(), senderId: userId });
-          } else {
-            // This client is likely the answerer or has already sent answer
-            addDoc(answerCandidatesCollectionRef, { ...event.candidate.toJSON(), senderId: userId });
-          }
-        });
+        console.log("[WebRTC] Found ICE candidate:", event.candidate.toJSON());
+        const roomSnapshot = await getDoc(roomDocRef);
+        if (roomSnapshot.exists()) {
+            const roomData = roomSnapshot.data();
+            // If this client created the offer, it sends offerCandidates.
+            // If it created the answer, it sends answerCandidates.
+            if (roomData.offer?.sdp === pc.current?.localDescription?.sdp || (roomData.offer && !roomData.answer)) {
+                console.log("[WebRTC] Sending offer candidate");
+                await addDoc(offerCandidatesCollectionRef, { ...event.candidate.toJSON(), senderId: userId });
+            } else if (roomData.answer?.sdp === pc.current?.localDescription?.sdp) {
+                 console.log("[WebRTC] Sending answer candidate");
+                await addDoc(answerCandidatesCollectionRef, { ...event.candidate.toJSON(), senderId: userId });
+            }
+        }
       }
     };
 
@@ -90,7 +95,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ userId, roomId, onHangUp }) => {
         console.log(`[WebRTC] Connection state: ${pc.current.connectionState}`);
         setCallStatus(`Connection: ${pc.current.connectionState}`);
         if (pc.current.connectionState === 'disconnected' || pc.current.connectionState === 'failed' || pc.current.connectionState === 'closed') {
-          // onHangUp(); // Consider if this is the right place
+          // Consider if onHangUp should be called here, or if it causes issues
         }
       }
     };
@@ -99,6 +104,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ userId, roomId, onHangUp }) => {
   const startLocalStream = useCallback(async () => {
     try {
       console.log("[WebRTC] Requesting local media stream...");
+      setCallStatus("Requesting media access...");
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localStreamRef.current = stream;
       if (localVideoRef.current) {
@@ -110,126 +116,161 @@ const VideoCall: React.FC<VideoCallProps> = ({ userId, roomId, onHangUp }) => {
            pc.current.addTrack(track, localStreamRef.current);
         }
       });
+      setCallStatus("Local stream started.");
     } catch (error) {
       console.error("[WebRTC] Error accessing media devices.", error);
       setCallStatus("Error: Could not access camera/microphone.");
+      toast({
+        variant: "destructive",
+        title: "Media Access Error",
+        description: "Could not access your camera or microphone. Please check permissions.",
+      });
     }
-  }, []);
+  }, [toast]);
 
 
   useEffect(() => {
+    console.log(`[WebRTC] VideoCall component mounted for roomId: ${roomId}, userId: ${userId}`);
     setupPeerConnection();
     startLocalStream();
 
     const roomUnsubscribe = onSnapshot(roomDocRef, async (snapshot) => {
       const data = snapshot.data();
-      console.log("[WebRTC] Room snapshot data:", data);
+      console.log("[WebRTC] Room snapshot data received:", data);
 
       if (!pc.current) {
-        console.warn("[WebRTC] PeerConnection is null in room snapshot listener.");
+        console.warn("[WebRTC] PeerConnection is null in room snapshot listener. This shouldn't happen.");
         return;
       }
-
-      if (data?.offer && !pc.current.remoteDescription && !snapshot.metadata.hasPendingWrites) {
-        // If there's an offer and we haven't set it (and it's not our own pending offer)
+      
+      // If this client is the caller (has created an offer) and an answer appears
+      if (data?.answer && pc.current.signalingState === 'have-local-offer') {
+        console.log("[WebRTC] Received answer, attempting to set remote description.");
+        const answerDescription = new RTCSessionDescription(data.answer);
+        try {
+          await pc.current.setRemoteDescription(answerDescription);
+          setCallStatus("Connected.");
+          console.log("[WebRTC] Successfully set remote description for answer.");
+        } catch (error) {
+            console.error("[WebRTC] Error setting remote description for answer:", error);
+            setCallStatus("Error connecting (setRemoteDescription for answer failed).");
+        }
+      } 
+      // If this client is the callee (joining a room with an existing offer) and hasn't processed it yet
+      else if (data?.offer && pc.current.signalingState === 'stable' && !pc.current.remoteDescription) {
         console.log("[WebRTC] Found offer, attempting to set remote description and create answer.");
         const offerDescription = new RTCSessionDescription(data.offer);
         try {
           await pc.current.setRemoteDescription(offerDescription);
+          console.log("[WebRTC] Successfully set remote description for offer. Creating answer...");
           const answer = await pc.current.createAnswer();
           await pc.current.setLocalDescription(answer);
           await updateDoc(roomDocRef, { answer: { type: answer.type, sdp: answer.sdp } });
           setCallStatus("Answer created and sent.");
+          console.log("[WebRTC] Successfully created and sent answer.");
         } catch (error) {
           console.error("[WebRTC] Error processing offer / creating answer:", error);
-          setCallStatus("Error processing offer.");
-        }
-      } else if (data?.answer && !pc.current.remoteDescription && !snapshot.metadata.hasPendingWrites) {
-        // This case is likely for the offerer receiving the answer.
-        // The check should be `pc.current.currentRemoteDescription` if it's an offerer.
-        // Or more simply, if an answer exists and this client hasn't set it yet.
-        if(pc.current.signalingState === 'have-local-offer' || pc.current.signalingState === 'stable' && pc.current.localDescription?.type === 'offer'){
-            console.log("[WebRTC] Received answer, attempting to set remote description.");
-            const answerDescription = new RTCSessionDescription(data.answer);
-            try {
-              await pc.current.setRemoteDescription(answerDescription);
-              setCallStatus("Connected.");
-            } catch (error) {
-                console.error("[WebRTC] Error setting remote description for answer:", error);
-                setCallStatus("Error setting remote description.");
-            }
+          setCallStatus("Error connecting (processing offer failed).");
         }
       }
     });
 
+    // Listen for ICE candidates from the offerer if I am the answerer
     const offerCandidatesUnsubscribe = onSnapshot(
       query(offerCandidatesCollectionRef, where("senderId", "!=", userId)), (snapshot) => {
       snapshot.docChanges().forEach(async (change) => {
         if (change.type === 'added') {
-          console.log("[WebRTC] Received offerer ICE candidate:", change.doc.data());
-          const candidate = new RTCIceCandidate(change.doc.data());
-          try {
-            await pc.current?.addIceCandidate(candidate);
-          } catch (error) {
-            console.error("[WebRTC] Error adding received ICE candidate (offerer):", error);
+          if (pc.current && pc.current.remoteDescription) { // Only add candidates after remote description is set
+            console.log("[WebRTC] Received offerer ICE candidate:", change.doc.data());
+            const candidate = new RTCIceCandidate(change.doc.data());
+            try {
+              await pc.current.addIceCandidate(candidate);
+              console.log("[WebRTC] Added offerer ICE candidate successfully.");
+            } catch (error) {
+              console.error("[WebRTC] Error adding received ICE candidate (from offerer):", error);
+            }
+          } else {
+            console.log("[WebRTC] Received offerer ICE candidate but remoteDescription not set yet. Candidate ignored for now.", change.doc.data());
           }
         }
       });
     });
     
+    // Listen for ICE candidates from the answerer if I am the offerer
     const answerCandidatesUnsubscribe = onSnapshot(
       query(answerCandidatesCollectionRef, where("senderId", "!=", userId)), (snapshot) => {
       snapshot.docChanges().forEach(async (change) => {
         if (change.type === 'added') {
-          console.log("[WebRTC] Received answerer ICE candidate:", change.doc.data());
-          const candidate = new RTCIceCandidate(change.doc.data());
-          try {
-            await pc.current?.addIceCandidate(candidate);
-          } catch (error) {
-            console.error("[WebRTC] Error adding received ICE candidate (answerer):", error);
+           if (pc.current && pc.current.remoteDescription) { // Only add candidates after remote description is set
+            console.log("[WebRTC] Received answerer ICE candidate:", change.doc.data());
+            const candidate = new RTCIceCandidate(change.doc.data());
+            try {
+              await pc.current.addIceCandidate(candidate);
+              console.log("[WebRTC] Added answerer ICE candidate successfully.");
+            } catch (error) {
+              console.error("[WebRTC] Error adding received ICE candidate (from answerer):", error);
+            }
+          } else {
+             console.log("[WebRTC] Received answerer ICE candidate but remoteDescription not set yet. Candidate ignored for now.", change.doc.data());
           }
         }
       });
     });
 
-
-    // Initial call logic: try to create offer if room doesn't exist or has no offer
     const initializeCall = async () => {
         if (!pc.current || !localStreamRef.current) {
-            console.warn("[WebRTC] PC or local stream not ready for initializeCall");
-            // Retry or wait for stream
-            setTimeout(initializeCall, 500);
+            console.warn("[WebRTC] PC or local stream not ready for initializeCall. Retrying...");
+            setCallStatus("Waiting for media stream...");
+            setTimeout(initializeCall, 1000); // Retry after a short delay
             return;
         }
         
+        setCallStatus("Checking room status...");
         const roomSnapshot = await getDoc(roomDocRef);
         if (!roomSnapshot.exists() || !roomSnapshot.data()?.offer) {
             console.log("[WebRTC] Room does not exist or no offer found. Creating offer...");
+            setCallStatus("Creating offer...");
             try {
               const offerDescription = await pc.current.createOffer();
               await pc.current.setLocalDescription(offerDescription);
+              // Create room document with offer and participants array
               await setDoc(roomDocRef, { 
                 offer: { type: offerDescription.type, sdp: offerDescription.sdp },
-                participants: [userId] // Add initial participant
+                participants: [userId] 
               }, { merge: true });
               setCallStatus("Offer created. Waiting for peer...");
+              console.log("[WebRTC] Offer created and room document initialized.");
             } catch (error) {
               console.error("[WebRTC] Error creating offer:", error);
               setCallStatus("Error creating offer.");
             }
         } else if (roomSnapshot.exists() && roomSnapshot.data()?.offer && !roomSnapshot.data()?.answer) {
-            // Offer exists, this client is joining
-            console.log("[WebRTC] Offer exists. This client is joining. Attempting to update participants.");
+            // Offer exists, this client is joining and needs to create an answer
+            console.log("[WebRTC] Offer exists, I am the callee. Processing offer...");
+            setCallStatus("Joining call...");
+            const currentParticipants = roomSnapshot.data()?.participants || [];
+            if (!currentParticipants.includes(userId)) {
+                await updateDoc(roomDocRef, { participants: [...currentParticipants, userId] });
+                console.log("[WebRTC] Added self to participants list.");
+            }
+            // The onSnapshot listener for roomDocRef will handle setting remote desc and creating answer
+        } else if (roomSnapshot.exists() && roomSnapshot.data()?.offer && roomSnapshot.data()?.answer) {
+            console.log("[WebRTC] Room already has offer and answer. Potentially joining an active call or rejoining.");
+            setCallStatus("Attempting to connect to existing call...");
+            // If current client is not in participants, add them
             const currentParticipants = roomSnapshot.data()?.participants || [];
             if (!currentParticipants.includes(userId)) {
                 await updateDoc(roomDocRef, { participants: [...currentParticipants, userId] });
             }
         }
     };
-    initializeCall();
+    // Delay initializeCall slightly to give local stream time to fully initialize and attach tracks
+    const initTimeout = setTimeout(initializeCall, 500);
+
 
     return () => {
-      console.log("[WebRTC] Cleaning up VideoCall component...");
+      console.log("[WebRTC] Cleaning up VideoCall component for roomId:", roomId);
+      clearTimeout(initTimeout);
       roomUnsubscribe();
       offerCandidatesUnsubscribe();
       answerCandidatesUnsubscribe();
@@ -241,18 +282,19 @@ const VideoCall: React.FC<VideoCallProps> = ({ userId, roomId, onHangUp }) => {
         });
         pc.current.close();
         pc.current = null;
+        console.log("[WebRTC] PeerConnection closed.");
       }
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
         localStreamRef.current = null;
+        console.log("[WebRTC] Local stream stopped.");
       }
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = null;
       }
-      // Optionally, clean up Firestore document if this user is the last one
-      // This is complex and depends on your app's logic for room lifecycle
+      // Consider more advanced room cleanup logic here if needed
     };
-  }, [roomId, userId, setupPeerConnection, startLocalStream, roomDocRef, offerCandidatesCollectionRef, answerCandidatesCollectionRef]);
+  }, [roomId, userId, setupPeerConnection, startLocalStream, roomDocRef, offerCandidatesCollectionRef, answerCandidatesCollectionRef]); // Dependencies
 
   const handleToggleMute = () => {
     if (localStreamRef.current) {
@@ -273,32 +315,39 @@ const VideoCall: React.FC<VideoCallProps> = ({ userId, roomId, onHangUp }) => {
   };
 
   const handleLocalHangUp = async () => {
-    console.log("[WebRTC] User initiated hang up.");
+    console.log("[WebRTC] User initiated hang up for room:", roomId);
+    
     // Signal hang up to other peer if necessary (e.g., by updating room doc)
-    // For simplicity, this example just calls the passed onHangUp
-    onHangUp();
-
-    // Optional: Clean up the room document or specific fields if this user is leaving
-    // This part is tricky for 2-party calls as you don't know if the other user is still there
-    // or if this was the "host"
+    // This is a simplified cleanup. More robust cleanup might involve checking if this user was the offerer.
+    // For now, we'll try to remove offer/answer to allow room reuse by others.
     try {
         const roomSnapshot = await getDoc(roomDocRef);
         if (roomSnapshot.exists()) {
-            // Example: Clear offer/answer to allow re-joining or new calls if room ID is reused.
-            // Or, more robustly, delete the room if this is the last participant.
-            // For now, let's clear offer/answer if this was the offerer
-            // This is simplified logic.
-            if (roomSnapshot.data()?.offer?.sdp === pc.current?.localDescription?.sdp) {
-                // This client was the offerer
-                // await updateDoc(roomDocRef, { offer: deleteField(), answer: deleteField() });
+            const roomData = roomSnapshot.data();
+            const updates:any = {};
+            if (roomData.offer) updates.offer = deleteField();
+            if (roomData.answer) updates.answer = deleteField();
+            // Optionally remove this user from participants array
+            const currentParticipants = roomData.participants || [];
+            const updatedParticipants = currentParticipants.filter((pId: string) => pId !== userId);
+            updates.participants = updatedParticipants;
+
+            if (Object.keys(updates).length > 0) {
+                 await updateDoc(roomDocRef, updates);
+                 console.log("[WebRTC] Cleared offer/answer fields and updated participants in room document.");
             }
-            // Clean up candidates related to this user
+
+            // Delete user's ICE candidates
+            const batch = writeBatch(db);
             const offerCandidatesQuery = query(offerCandidatesCollectionRef, where("senderId", "==", userId));
             const answerCandidatesQuery = query(answerCandidatesCollectionRef, where("senderId", "==", userId));
             
-            const batch = writeBatch(db);
-            (await getDoc(offerCandidatesQuery)).docs.forEach(doc => batch.delete(doc.ref));
-            (await getDoc(answerCandidatesQuery)).docs.forEach(doc => batch.delete(doc.ref));
+            const offerCandidatesSnap = await getDoc(offerCandidatesQuery); // Changed to getDoc for query
+            offerCandidatesSnap.docs.forEach(doc => batch.delete(doc.ref));
+            
+            const answerCandidatesSnap = await getDoc(answerCandidatesQuery); // Changed to getDoc for query
+            answerCandidatesSnap.docs.forEach(doc => batch.delete(doc.ref));
+            
             await batch.commit();
             console.log("[WebRTC] Cleaned up user's ICE candidates from Firestore.");
         }
@@ -306,28 +355,51 @@ const VideoCall: React.FC<VideoCallProps> = ({ userId, roomId, onHangUp }) => {
         console.error("[WebRTC] Error during hangup cleanup in Firestore:", error);
     }
 
+    onHangUp(); // Call the parent's hangup handler
+  };
+
+  const handleShareLink = async () => {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'; // Fallback for local dev
+    const roomLink = `${appUrl}/video-consult?roomId=${roomId}`;
+    try {
+      await navigator.clipboard.writeText(roomLink);
+      toast({
+        title: "Link Copied!",
+        description: "Video call room link copied to clipboard.",
+      });
+    } catch (err) {
+      console.error('Failed to copy room link: ', err);
+      toast({
+        variant: "destructive",
+        title: "Copy Failed",
+        description: "Could not copy room link to clipboard.",
+      });
+    }
   };
 
 
   return (
     <div className="space-y-4 p-4 border rounded-lg shadow-md bg-card">
-      <p className="text-sm text-center text-muted-foreground">Room ID: <span className="font-semibold text-primary">{roomId}</span> | Status: <span className="font-semibold">{callStatus}</span></p>
+      <p className="text-sm text-center text-muted-foreground">Room ID: <span className="font-semibold text-primary">{roomId}</span> | Status: <span className="font-semibold">{callStatus === "Initializing..." || callStatus === "Requesting media access..." || callStatus === "Waiting for media stream..." || callStatus === "Checking room status..." || callStatus === "Creating offer..." || callStatus === "Offer created. Waiting for peer..." || callStatus === "Joining call..." || callStatus === "Answer created and sent." ? <Loader2 className="inline h-4 w-4 animate-spin mr-1" /> : null}{callStatus}</span></p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <h3 className="text-center font-medium mb-2">Your Video</h3>
-          <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-auto rounded-md bg-muted aspect-video object-cover" />
+          <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-auto rounded-md bg-muted aspect-video object-cover transform scale-x-[-1]" />
         </div>
         <div>
           <h3 className="text-center font-medium mb-2">Remote Video</h3>
-          <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-auto rounded-md bg-muted aspect-video object-cover" />
+          <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-auto rounded-md bg-muted aspect-video object-cover transform scale-x-[-1]" />
         </div>
       </div>
-      <div className="flex justify-center space-x-3 mt-4">
+      <div className="flex justify-center space-x-2 md:space-x-3 mt-4">
         <Button onClick={handleToggleMute} variant={isMuted ? "secondary" : "outline"} size="icon" aria-label={isMuted ? "Unmute" : "Mute"}>
           {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
         </Button>
         <Button onClick={handleToggleVideo} variant={isVideoOff ? "secondary" : "outline"} size="icon" aria-label={isVideoOff ? "Turn Video On" : "Turn Video Off"}>
           {isVideoOff ? <VideoOff className="h-5 w-5" /> : <VideoIcon className="h-5 w-5" />}
+        </Button>
+        <Button onClick={handleShareLink} variant="outline" size="icon" aria-label="Share Room Link">
+          <Share2 className="h-5 w-5" />
         </Button>
         <Button onClick={handleLocalHangUp} variant="destructive" size="icon" aria-label="Hang Up">
           <PhoneOff className="h-5 w-5" />
@@ -338,5 +410,3 @@ const VideoCall: React.FC<VideoCallProps> = ({ userId, roomId, onHangUp }) => {
 };
 
 export default VideoCall;
-
-    

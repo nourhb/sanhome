@@ -1,17 +1,18 @@
 
 import type { ReactNode } from 'react';
-import { AppSidebarContent } from '@/components/app-sidebar-content';
 import { UserNav } from '@/components/user-nav';
 import { Sidebar, SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { APP_NAME } from '@/lib/constants';
 import Link from 'next/link';
 import { Logo } from '@/components/logo';
+import { AppSidebarContent } from '@/components/app-sidebar-content';
 
 interface AppLayoutProps {
   children: ReactNode;
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  // TODO: Review and remove any remaining Whereby-specific code or imports
   console.log('AppLayout rendering'); // Added for debugging
   return (
     <SidebarProvider defaultOpen={true}>
@@ -19,7 +20,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         <AppSidebarContent />
       </Sidebar>
       <div className="min-h-screen flex flex-1 flex-col"> {/* Changed order of flex classes */}
-        <header className="sticky top-0 z-30 flex h-[60px] items-center gap-4 border-b bg-background px-4 sm:px-6 shadow-sm">
+        <header className="sticky top-0 z-30 flex h-[60px] items-center gap-4 border-b bg-background px-4 sm:px-6 shadow-sm"> {/* Removed Whereby-specific header elements if any */}
           <SidebarTrigger className="sm:hidden" />
            <div className="flex items-center gap-2 sm:hidden">
              <Logo />

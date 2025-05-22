@@ -210,9 +210,11 @@ export default function NursesPage() {
                 </p>
               </CardContent>
               <CardFooter className="pt-3 p-4 border-t">
+                <Link href={`/nurses/${nurse.id}`} className="w-full">
                   <Button variant="outline" size="sm" className="w-full">
-                    View Profile & Schedule
+                    View Profile
                   </Button>
+                </Link>
               </CardFooter>
             </Card>
           ))}

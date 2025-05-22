@@ -24,10 +24,10 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { CalendarIcon, Clock, Loader2, VideoIcon, Users, User, AlertCircle } from "lucide-react"; // Added VideoIcon
+import { CalendarIcon, Clock, Loader2, Video as VideoIconLucide, Users, User, AlertCircle } from "lucide-react"; 
 import { useToast } from "@/hooks/use-toast";
 import { fetchPatients, fetchNurses, scheduleVideoConsult, type PatientListItem, type NurseListItem } from "@/app/actions";
-import { useAuth } from "@/contexts/auth-context"; // Import useAuth
+import { useAuth } from "@/contexts/auth-context"; 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const scheduleVideoConsultFormSchema = z.object({
@@ -43,7 +43,7 @@ export default function ScheduleVideoConsultPage() {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const router = useRouter();
-  const { currentUser, loading: authLoading } = useAuth(); // Get auth state
+  const { currentUser, loading: authLoading } = useAuth(); 
   const [patients, setPatients] = useState<PatientListItem[]>([]);
   const [nurses, setNurses] = useState<NurseListItem[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -51,7 +51,7 @@ export default function ScheduleVideoConsultPage() {
 
   useEffect(() => {
     async function loadInitialData() {
-      if (authLoading) return; // Wait for auth state to resolve
+      if (authLoading) return; 
 
       if (!currentUser) {
         setDataError("User not authenticated. Please log in to schedule consultations.");
@@ -72,14 +72,14 @@ export default function ScheduleVideoConsultPage() {
           setPatients(patientsResponse.data);
         } else {
           setDataError(patientsResponse.error || "Failed to load patients.");
-          toast({ variant: "destructive", title: "Error", description: patientsResponse.error || "Failed to load patients." });
+          toast({ variant: "destructive", title: "Error loading patients", description: patientsResponse.error || "Failed to load patients." });
         }
         
         if (nursesResponse.data) {
           setNurses(nursesResponse.data);
         } else {
           setDataError((prevError) => prevError ? `${prevError} ${nursesResponse.error || "Failed to load nurses."}` : nursesResponse.error || "Failed to load nurses.");
-          toast({ variant: "destructive", title: "Error", description: nursesResponse.error || "Failed to load nurses." });
+          toast({ variant: "destructive", title: "Error loading nurses", description: nursesResponse.error || "Failed to load nurses." });
         }
 
       } catch (error: any) {
@@ -112,19 +112,18 @@ export default function ScheduleVideoConsultPage() {
     startTransition(async () => {
       const [hours, minutes] = values.consultationTime.split(':').map(Number);
       const consultationDateTime = new Date(values.consultationDate);
-      // Ensure time is correctly set on the date object
-      consultationDateTime.setHours(hours, minutes, 0, 0);
-
+      consultationDateTime.setHours(hours, minutes, 0, 0);      
+      
       const result = await scheduleVideoConsult({
         patientId: values.patientId,
         nurseId: values.nurseId,
         consultationDateTime: consultationDateTime,
       });
 
-      if (result.success) {
+      if (result.success && result.roomId) {
         toast({
-          title: "Video Consult Scheduled",
-          description: result.message,
+          title: "Video Consult Scheduled (WebRTC)",
+          description: `${result.message} Room ID: ${result.roomId}`,
         });
         form.reset();
         router.push("/video-consult"); 
@@ -132,7 +131,7 @@ export default function ScheduleVideoConsultPage() {
         toast({
           variant: "destructive",
           title: "Scheduling Failed",
-          description: result.message,
+          description: result.message || "Could not schedule WebRTC video consult.",
         });
       }
     });
@@ -178,7 +177,7 @@ export default function ScheduleVideoConsultPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Schedule Video Consultation</h1>
+          <h1 className="text-2xl font-semibold">Schedule Video Consultation (WebRTC)</h1>
           <p className="text-muted-foreground">Select patient, nurse, and time for the video call.</p>
         </div>
       </div>
@@ -188,11 +187,11 @@ export default function ScheduleVideoConsultPage() {
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <VideoIcon className="h-6 w-6 text-primary" />
+                <VideoIconLucide className="h-6 w-6 text-primary" />
                 Consultation Details
               </CardTitle>
               <CardDescription>
-                Fill in the details to schedule a new video consultation.
+                Fill in the details to schedule a new WebRTC video consultation.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -309,7 +308,7 @@ export default function ScheduleVideoConsultPage() {
                   </>
                 ) : (
                   <>
-                    <VideoIcon className="mr-2 h-4 w-4" />
+                    <VideoIconLucide className="mr-2 h-4 w-4" />
                     Schedule Consult
                   </>
                 )}
@@ -322,3 +321,4 @@ export default function ScheduleVideoConsultPage() {
   );
 }
 
+    

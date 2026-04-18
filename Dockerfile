@@ -1,9 +1,14 @@
-# Adjust install/build/start commands for your package manager and entrypoint.
-FROM node:20-alpine
+# GOOD version
+FROM node:18
+
 WORKDIR /app
+
+# copy only package first
 COPY package*.json ./
+
 RUN npm ci
+
+# THEN copy rest
 COPY . .
-ENV NODE_ENV=production
-EXPOSE 3000
-CMD ["npm", "run", "start"]
+
+CMD ["npm", "start"]
